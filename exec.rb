@@ -1,5 +1,8 @@
 #!/usr/bin/env ruby
 require 'open3'
+require 'yaml'
+
+#TODO test with ruby==2.0
 
 #TODO may need to set this dynamically
 POWERCAP_ROOT_DIR = '/sys/devices/virtual/powercap'
@@ -89,6 +92,23 @@ num_cores = get_env_var('SLURM_CPUS_ON_NODE')
 #NOTE: in slurm vocab, 'CPUS' usually (& in this case) actually refers to cores
 cpus_per_task = get_env_var('SLURM_CPUS_PER_TASK', error = false) || 0
 
+#TODO extract the default config behaviour
+#NOTE: SLURM_SUBMIT_DIR - The directory from which srun was invoked or, if applicable, the directory specified by the -D, --chdir option
+#__dir__ can only be used for ruby >= 2.0 but  doesn't change if chdir is called
+top_directory = find_option(opts_arr, /d|directory/) || File.join(__dir__, 'record-job-energy')
+#TODO duplicate code
+begin
+  Dir.mkdir(top_directory) unless Dir.exists?(top_directory)
+rescue SystemCallError
+  raise EnergyRecordError, "Error while creating directory #{top_directory} - aborting"
+end
+out_directory = File.join(top_directory, job_id)
+begin
+  Dir.mkdir(out_directory) unless Dir.exists?(out_directory)
+rescue SystemCallError
+  raise EnergyRecordError, "Error while creating directory #{out_directory} - aborting"
+end
+out_file = File.join(out_directory, proc_id)
 
 zones = get_zone_info
 read_energy(zones, "starting_energy")
@@ -97,4 +117,5 @@ stdout, stderr, status = Open3.capture3(task_arr.join(' '))
 puts stdout.empty? ? stderr : stdout
 
 read_energy(zones, "finishing_energy")
-pp zones
+yaml_zones = zones.to_yaml
+File.open(out_file, 'w') { |f| f.write(yaml_zones) }
