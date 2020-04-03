@@ -3,6 +3,20 @@ require 'open3'
 
 #TODO may need to set this dynamically
 POWERCAP_ROOT_DIR = '/sys/devices/virtual/powercap'
+EnergyRecordError = Class.new(RuntimeError)
+
+#TODO  call this
+def get_env_var(var, error = true)
+  if ENV[var]
+    return ENV[var]
+  else
+    if error
+      raise EnergyRecordError, "ERROR - environment variable '#{var}' not found - aborting"
+    else
+      return nil
+    end
+  end
+end
 
 #looks for the provided option 'target_opt', return its value if it's in key-value format
 #   else returning true if found or nil if not
@@ -66,7 +80,15 @@ else
   task_arr = []
 end
 
-node = ENV['SLURMD_NODENAME']
+job_id = get_env_var('SLURM_JOB_ID', error = false) || get_env_var('SLURM_JOBID')
+node = get_env_var('SLURMD_NODENAME')
+proc_id = get_env_var('SLURM_PROCID')
+#NOTE: should i get this info from the system? the energy readings are from the
+#   system after all & this can be altered in slurm conf. edge case.
+num_cores = get_env_var('SLURM_CPUS_ON_NODE')
+#NOTE: in slurm vocab, 'CPUS' usually (& in this case) actually refers to cores
+cpus_per_task = get_env_var('SLURM_CPUS_PER_TASK', error = false) || 0
+
 
 zones = get_zone_info
 read_energy(zones, "starting_energy")
