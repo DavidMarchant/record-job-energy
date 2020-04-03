@@ -4,6 +4,20 @@ require 'open3'
 #TODO may need to set this dynamically
 POWERCAP_ROOT_DIR = '/sys/devices/virtual/powercap'
 
+#looks for the provided option 'target_opt', return its value if it's in key-value format
+#   else returning true if found or nil if not
+#only the first match is considered, prioritising those with values
+def find_option(opts_arr, target_opt)
+  match_data = nil
+  if opts_arr.find { |opt| match_data = opt.match(/^--?#{target_opt}=(\S+)$/) }
+    return match_data[1]
+  elsif opts_arr.find { |opt| opt =~ /^--?#{target_opt}$/ }
+    return true
+  else
+    return nil
+  end
+end
+
 def read_first_line(file)
   `head -n 1 #{file}`.strip
 end
