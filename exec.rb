@@ -8,7 +8,6 @@ require 'yaml'
 POWERCAP_ROOT_DIR = '/sys/devices/virtual/powercap'
 EnergyRecordError = Class.new(RuntimeError)
 
-#TODO  call this
 def get_env_var(var, error = true)
   if ENV[var]
     return ENV[var]
@@ -68,10 +67,12 @@ def get_zone_info
 	zone_info
 end
 
+#take as input zone information in form output from get_zone_info
 def read_energy(zones, tag)
   zones.each do |zone|
     zone[tag] = read_first_line(File.join(zone['path'], 'energy_uj'))
   end
+  zones
 end
 
 #treat first argument not starting with a hyphen as the begining of the task
@@ -79,8 +80,7 @@ first_cmd = ARGV.index{ |arg| !arg.start_with?('-') }
 if first_cmd
   opts_arr, task_arr = ARGV.slice(0, first_cmd), ARGV.slice(first_cmd, ARGV.length)
 else
-  opts_arr = ARGV
-  task_arr = []
+  opts_arr, task_arr = ARGV, []
 end
 
 job_id = get_env_var('SLURM_JOB_ID', error = false) || get_env_var('SLURM_JOBID')
@@ -111,11 +111,13 @@ end
 out_file = File.join(out_directory, proc_id)
 
 zones = get_zone_info
-read_energy(zones, "starting_energy")
 
+read_energy(zones, "starting_energy")
+#TODO capture errors from this, do we crash out?
 stdout, stderr, status = Open3.capture3(task_arr.join(' '))
+read_energy(zones, "finishing_energy")
+
 puts stdout.empty? ? stderr : stdout
 
-read_energy(zones, "finishing_energy")
 yaml_zones = zones.to_yaml
 File.open(out_file, 'w') { |f| f.write(yaml_zones) }
