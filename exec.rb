@@ -83,32 +83,44 @@ else
   opts_arr, task_arr = ARGV, []
 end
 
-job_id = get_env_var('SLURM_JOB_ID', error = false) || get_env_var('SLURM_JOBID')
+#TODO there is a per step version of most of these options(as opposed to per job?)
+#     may be best to swap
+job_id = (get_env_var('SLURM_JOB_ID', error = false) || get_env_var('SLURM_JOBID')).to_i
 node = get_env_var('SLURMD_NODENAME')
-proc_id = get_env_var('SLURM_PROCID')
-#NOTE: should i get this info from the system? the energy readings are from the
-#   system after all & this can be altered in slurm conf. edge case.
-num_cores = get_env_var('SLURM_CPUS_ON_NODE')
+proc_id = get_env_var('SLURM_PROCID').to_i
+num_procs = get_env_var('SLURM_NTASKS').to_i
+#NOTE: this value is retreived from the system as there are slurm configuration
+#   options that obfuscate the true properties of nodes to slurm processes,
+#   which should be bypassed when analysing the system energy consumpton.
+num_cores, _stderr, _status = Open3.capture3("nproc")
+num_cores = num_cores.strip.to_i
 #NOTE: in slurm vocab, 'CPUS' usually (& in this case) actually refers to cores
-cpus_per_task = get_env_var('SLURM_CPUS_PER_TASK', error = false) || 0
+cpus_per_task = (get_env_var('SLURM_CPUS_PER_TASK', error = false) || 1).to_i
 
 #TODO extract the default config behaviour
+#NOTE: could use SLURM_LAUNCH_NODE_IPADDR to send data back to the launching node rather than use
+#     the flesystem. This can avoid issues with distributed filesystem, access rights, etc.
 #NOTE: SLURM_SUBMIT_DIR - The directory from which srun was invoked or, if applicable, the directory specified by the -D, --chdir option
 #__dir__ can only be used for ruby >= 2.0 but  doesn't change if chdir is called
 top_directory = find_option(opts_arr, /d|directory/) || File.join(__dir__, 'record-job-energy')
-#TODO duplicate code
-begin
-  Dir.mkdir(top_directory) unless Dir.exists?(top_directory)
-rescue SystemCallError
-  raise EnergyRecordError, "Error while creating directory #{top_directory} - aborting"
+out_directory = File.join(top_directory, job_id.to_s)
+comms_file = File.join(out_directory, "comms_file")
+
+if proc_id.to_i == 0
+  #TODO duplicate code
+  begin
+    Dir.mkdir(top_directory) unless Dir.exists?(top_directory)
+  rescue SystemCallError
+    #TODO how to exit from all processes? scancel?
+    raise EnergyRecordError, "Error while creating directory #{top_directory} - aborting"
+  end
+  begin
+    Dir.mkdir(out_directory) unless Dir.exists?(out_directory)
+  rescue SystemCallError
+    raise EnergyRecordError, "Error while creating directory #{out_directory} - aborting"
+  end
 end
-out_directory = File.join(top_directory, job_id)
-begin
-  Dir.mkdir(out_directory) unless Dir.exists?(out_directory)
-rescue SystemCallError
-  raise EnergyRecordError, "Error while creating directory #{out_directory} - aborting"
-end
-out_file = File.join(out_directory, proc_id)
+out_file = File.join(out_directory, proc_id.to_s)
 
 zones = get_zone_info
 
