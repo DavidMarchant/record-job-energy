@@ -40,15 +40,15 @@ end
 
 def find_zone_name(dir)
   cur_dir = dir
-  name_str = ''
+  name_arr = []
   while File.dirname(cur_dir) != POWERCAP_ROOT_DIR do
     name_file = File.join(cur_dir, 'name')
     if File.file?(name_file)
-      name_str = " --> " + read_first_line(name_file) + name_str
+      name_arr.unshift(read_first_line(name_file))
     end
     cur_dir = File.dirname(cur_dir)
   end
-  name_str = File.basename(cur_dir) + name_str
+  name_arr.unshift(File.basename(cur_dir))
 end
 
 #returns a list of hashes containing info on each of this node's powercap zones
