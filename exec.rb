@@ -70,7 +70,7 @@ end
 #take as input zone information in form output from get_zone_info
 def read_energy(zones, tag)
   zones.each do |zone|
-    zone[tag] = read_first_line(File.join(zone['path'], 'energy_uj'))
+    zone[tag] = read_first_line(File.join(zone['path'], 'energy_uj')).to_i
   end
   zones
 end
@@ -102,9 +102,10 @@ cpus_per_task = (get_env_var('SLURM_CPUS_PER_TASK', error = false) || 1).to_i
 #     the flesystem. This can avoid issues with distributed filesystem, access rights, etc.
 #NOTE: SLURM_SUBMIT_DIR - The directory from which srun was invoked or, if applicable, the directory specified by the -D, --chdir option
 #__dir__ can only be used for ruby >= 2.0 but  doesn't change if chdir is called
-top_directory = find_option(opts_arr, /d|directory/) || File.join(__dir__, 'record-job-energy')
+top_directory = find_option(opts_arr, /d|directory/) || File.join(__dir__, 'record-job-energy-data')
 out_directory = File.join(top_directory, job_id.to_s)
 comms_file = File.join(out_directory, "comms_file")
+out_file_path = File.join(out_directory, proc_id.to_s)
 
 if proc_id.to_i == 0
   #TODO duplicate code
@@ -120,7 +121,6 @@ if proc_id.to_i == 0
     raise EnergyRecordError, "Error while creating directory #{out_directory} - aborting"
   end
 end
-out_file = File.join(out_directory, proc_id.to_s)
 
 zones = get_zone_info
 
@@ -129,7 +129,58 @@ read_energy(zones, "starting_energy")
 stdout, stderr, status = Open3.capture3(task_arr.join(' '))
 read_energy(zones, "finishing_energy")
 
-puts stdout.empty? ? stderr : stdout
+print stdout.empty? ? stderr : stdout
 
-yaml_zones = zones.to_yaml
-File.open(out_file, 'w') { |f| f.write(yaml_zones) }
+proc_data = {'node' => node,
+             'num_cores' => num_cores,
+             'job_id' => job_id,
+             'proc_id' => proc_id,
+             'cpus_per_task' => cpus_per_task,
+             'zones' => zones}
+
+yaml_proc_data = proc_data.to_yaml
+File.open(out_file_path, 'w') { |f| f.write(yaml_proc_data) }
+
+
+#NOTE: this is done as a system call to make use of any distributed filesystem's
+#   concurrency control
+_, _, _ = Open3.capture3("echo 'process #{proc_id} completed' >> #{comms_file}")
+
+if proc_id.to_i == 0
+  t1 = Time.now
+  #NOTE: hung here with a local /opt/slurm/bin/sbatch -n 2 run-exec.sh for some reason
+  # only got 1 output file & so the line count did nae work
+  while true
+    if File.open(comms_file,"r").readlines.count == num_procs
+      break
+    #TODO make this value an option
+    elsif Time.now - t1 > 600
+      raise EnergyRecordError, "Error - timeout waiting for processes to complete"
+    end
+    sleep 1
+  end
+  per_node_data = {}
+  Dir.glob(File.join(out_directory, '*')).each do |file|
+    next if file == comms_file
+    proc_data = YAML.load(File.read(file))
+    node_ = proc_data['node']
+    node_proportion = (1.0/proc_data['num_cores'])*proc_data['cpus_per_task']
+
+    per_node_data[node_] ||= {}
+    per_node_data[node_]['num_cores'] = proc_data['num_cores']
+    per_node_data[node_]['cores_used'] ||= 0
+    per_node_data[node_]['cores_used'] += proc_data['cpus_per_task']
+    per_node_data[node_]['zones'] ||= {}
+
+    proc_data['zones'].each do |zone|
+      zone_name_ = zone['name'].join('-->')
+      change = (zone['finishing_energy']-zone['starting_energy'])*node_proportion
+      per_node_data[node_]['zones'][zone_name_] ||= 0
+      per_node_data[node_]['zones'][zone_name_] += change
+    end
+  end
+  yaml_per_node_data = per_node_data.to_yaml
+  totals_out_file_path = File.join(out_directory, "totalled_data")
+  File.open(totals_out_file_path, 'w') { |f| f.write(yaml_per_node_data) }
+  #TODO process this?
+end
