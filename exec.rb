@@ -13,11 +13,28 @@ def get_env_var(var, error = true)
     return ENV[var]
   else
     if error
-      raise EnergyRecordError, "ERROR - environment variable '#{var}' not found - aborting"
+      cancel_job("ERROR - environment variable '#{var}' not found - aborting")
     else
       return nil
     end
   end
+end
+
+def get_job_id(error = true)
+  (get_env_var('SLURM_JOB_ID', error_=false) || get_env_var('SLURM_JOBID', error_=error)).to_i
+end
+
+def cancel_job(message = nil)
+  #NOTE: need to not crash if job_id unavailable as an infinite loop is possible between
+  #      this method and get_env_var
+  Open3.capture3("scancel #{get_job_id(error = false)}")
+  proc_id = get_env_var('SLURM_PROCID', error = false)
+  message = if message and proc_id
+              "Error in process #{proc_id} - #{message}"
+            elsif message
+              "Error - #{message}"
+            end
+  raise EnergyRecordError, message
 end
 
 #looks for the provided option 'target_opt', return its value if it's in key-value format
@@ -85,7 +102,7 @@ end
 
 #TODO there is a per step version of most of these options(as opposed to per job?)
 #     may be best to swap
-job_id = (get_env_var('SLURM_JOB_ID', error = false) || get_env_var('SLURM_JOBID')).to_i
+job_id = get_job_id
 node = get_env_var('SLURMD_NODENAME')
 proc_id = get_env_var('SLURM_PROCID').to_i
 num_procs = get_env_var('SLURM_NTASKS').to_i
@@ -113,12 +130,12 @@ if proc_id.to_i == 0
     Dir.mkdir(top_directory) unless Dir.exists?(top_directory)
   rescue SystemCallError
     #TODO how to exit from all processes? scancel?
-    raise EnergyRecordError, "Error while creating directory #{top_directory} - aborting"
+    cancel_job("Error while creating directory #{top_directory} - aborting")
   end
   begin
     Dir.mkdir(out_directory) unless Dir.exists?(out_directory)
   rescue SystemCallError
-    raise EnergyRecordError, "Error while creating directory #{out_directory} - aborting"
+    cancel_job("Error while creating directory #{out_directory} - aborting")
   end
 end
 
@@ -155,7 +172,7 @@ if proc_id.to_i == 0
       break
     #TODO make this value an option
     elsif Time.now - t1 > 600
-      raise EnergyRecordError, "Error - timeout waiting for processes to complete"
+      cancel_job("timeout waiting for processes to complete")
     end
     sleep 1
   end
