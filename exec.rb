@@ -100,11 +100,38 @@ else
   opts_arr, task_arr = ARGV, []
 end
 
+proc_id = get_env_var('SLURM_PROCID').to_i
+
+if find_option(opts_arr, 'help')
+  if proc_id == 0
+    #TODO update as progress proceeds
+    #TODO replace defaults with the variables
+    puts <<-help_str
+RECORD-JOB-ENERGY HELP
+  This script should be executed as:
+      PARALLEL_CMD [PARALLEL_CMD_OPTS] exec.rb [OPTS] PARALLEL_TASK [PARALLEL_TASK_OPTS]
+    Where PARALLEL_CMD is srun.
+  Options for this script include:
+    [-d,--directory]=DIR
+      Sets the desired output directory to DIR. Default is
+        "this script's parent directory"/record-job-energy-data'
+    [-t,--timeout]=TIMEOUT
+      Sets the maximum time the root process will wait for the other processes to complete
+      execution, after the root process has finished its execution. Value is in seconds,
+      default value is 600.
+    --help
+      Display this message and exit
+    help_str
+  end
+  exit 0
+end
+
+cancel_job("no task provided - aborting") if task_arr.empty?
+
 #TODO there is a per step version of most of these options(as opposed to per job?)
 #     may be best to swap
 job_id = get_job_id
 node = get_env_var('SLURMD_NODENAME')
-proc_id = get_env_var('SLURM_PROCID').to_i
 num_procs = get_env_var('SLURM_NTASKS').to_i
 #NOTE: this value is retreived from the system as there are slurm configuration
 #   options that obfuscate the true properties of nodes to slurm processes,
@@ -124,7 +151,7 @@ out_directory = File.join(top_directory, job_id.to_s)
 comms_file = File.join(out_directory, "comms_file")
 out_file_path = File.join(out_directory, proc_id.to_s)
 
-if proc_id.to_i == 0
+if proc_id == 0
   #TODO duplicate code
   begin
     Dir.mkdir(top_directory) unless Dir.exists?(top_directory)
@@ -163,7 +190,7 @@ File.open(out_file_path, 'w') { |f| f.write(yaml_proc_data) }
 #   concurrency control
 _, _, _ = Open3.capture3("echo 'process #{proc_id} completed' >> #{comms_file}")
 
-if proc_id.to_i == 0
+if proc_id == 0
   t1 = Time.now
   #NOTE: hung here with a local /opt/slurm/bin/sbatch -n 2 run-exec.sh for some reason
   # only got 1 output file & so the line count did nae work
