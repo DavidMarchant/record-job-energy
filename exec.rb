@@ -4,9 +4,13 @@ require 'yaml'
 
 #TODO test with ruby==2.0
 
+EnergyRecordError = Class.new(RuntimeError)
+
 #TODO may need to set this dynamically
 POWERCAP_ROOT_DIR = '/sys/devices/virtual/powercap'
-EnergyRecordError = Class.new(RuntimeError)
+DEFAULTS = {out_directory: File.join(__dir__, 'record-job-energy-data'),
+            timeout: 600,
+           }
 
 def get_env_var(var, error = true)
   if ENV[var]
@@ -78,7 +82,6 @@ def get_zone_info
 		info_hash = {}
 		info_hash['path'] = dir
 		info_hash['name'] = find_zone_name(dir)
-		#info_hash['starting_energy'] = read_first_line(File.join(dir, 'energy_uj'))
 		zone_info << info_hash
 	end
 	zone_info
@@ -105,7 +108,6 @@ proc_id = get_env_var('SLURM_PROCID').to_i
 if find_option(opts_arr, 'help')
   if proc_id == 0
     #TODO update as progress proceeds
-    #TODO replace defaults with the variables
     puts <<-help_str
 RECORD-JOB-ENERGY HELP
   This script should be executed as:
@@ -113,12 +115,12 @@ RECORD-JOB-ENERGY HELP
     Where PARALLEL_CMD is srun.
   Options for this script include:
     [-d,--directory]=DIR
-      Sets the desired output directory to DIR. Default is
-        "this script's parent directory"/record-job-energy-data'
+      Sets the desired output directory to DIR. Default is:
+        #{DEFAULTS[:out_directory]}
     [-t,--timeout]=TIMEOUT
       Sets the maximum time the root process will wait for the other processes to complete
       execution, after the root process has finished its execution. Value is in seconds,
-      default value is 600.
+      default value is #{DEFAULTS[:timeout]}.
     --help
       Display this message and exit
     help_str
@@ -141,12 +143,11 @@ num_cores = num_cores.strip.to_i
 #NOTE: in slurm vocab, 'CPUS' usually (& in this case) actually refers to cores
 cpus_per_task = (get_env_var('SLURM_CPUS_PER_TASK', error = false) || 1).to_i
 
-#TODO extract the default config behaviour
 #NOTE: could use SLURM_LAUNCH_NODE_IPADDR to send data back to the launching node rather than use
 #     the flesystem. This can avoid issues with distributed filesystem, access rights, etc.
 #NOTE: SLURM_SUBMIT_DIR - The directory from which srun was invoked or, if applicable, the directory specified by the -D, --chdir option
 #__dir__ can only be used for ruby >= 2.0 but  doesn't change if chdir is called
-top_directory = find_option(opts_arr, /d|directory/) || File.join(__dir__, 'record-job-energy-data')
+top_directory = find_option(opts_arr, /d|directory/) || DEFAULTS[:out_directory]
 out_directory = File.join(top_directory, job_id.to_s)
 comms_file = File.join(out_directory, "comms_file")
 out_file_path = File.join(out_directory, proc_id.to_s)
@@ -156,7 +157,6 @@ if proc_id == 0
   begin
     Dir.mkdir(top_directory) unless Dir.exists?(top_directory)
   rescue SystemCallError
-    #TODO how to exit from all processes? scancel?
     cancel_job("Error while creating directory #{top_directory} - aborting")
   end
   begin
@@ -192,13 +192,14 @@ _, _, _ = Open3.capture3("echo 'process #{proc_id} completed' >> #{comms_file}")
 
 if proc_id == 0
   t1 = Time.now
+  time_limit = find_option(opts_arr, /t|timeout/) || 600
   #NOTE: hung here with a local /opt/slurm/bin/sbatch -n 2 run-exec.sh for some reason
   # only got 1 output file & so the line count did nae work
   while true
     if File.open(comms_file,"r").readlines.count == num_procs
       break
-    #TODO make this value an option
-    elsif Time.now - t1 > 600
+    #TODO start this recording from initial execution?
+    elsif Time.now - t1 > time_limit
       cancel_job("timeout waiting for processes to complete")
     end
     sleep 1
@@ -226,5 +227,4 @@ if proc_id == 0
   yaml_per_node_data = per_node_data.to_yaml
   totals_out_file_path = File.join(out_directory, "totalled_data")
   File.open(totals_out_file_path, 'w') { |f| f.write(yaml_per_node_data) }
-  #TODO process this?
 end
