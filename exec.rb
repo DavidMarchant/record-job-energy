@@ -95,6 +95,10 @@ def read_energy(zones, tag)
   zones
 end
 
+if get_env_var('SLURM_STEP_ID', error = false).nil?
+  cancel_job("run this executable only as part of a Slurm job step, using srun")
+end
+
 #treat first argument not starting with a hyphen as the begining of the task
 first_cmd = ARGV.index{ |arg| !arg.start_with?('-') }
 if first_cmd
