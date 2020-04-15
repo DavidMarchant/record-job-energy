@@ -95,10 +95,6 @@ def read_energy(zones, tag)
   zones
 end
 
-if get_env_var('SLURM_STEP_ID', error = false).nil?
-  cancel_job("run this executable only as part of a Slurm job step, using srun")
-end
-
 #treat first argument not starting with a hyphen as the begining of the task
 first_cmd = ARGV.index{ |arg| !arg.start_with?('-') }
 if first_cmd
@@ -107,7 +103,26 @@ else
   opts_arr, task_arr = ARGV, []
 end
 
-proc_id = get_env_var('SLURM_PROCID').to_i
+if get_env_var('SLURM_PROCID', error = false).nil?
+  cancel_job("run this executable only as part of a Slurm job")
+end
+
+if proc_id = get_env_var('PMI_RANK', error = false)
+  running_mode = :intel_mpi
+  num_procs = get_env_var('PMI_SIZE').to_i
+elsif proc_id = get_env_var('OMPI_COMM_WORLD_RANK', error = false)
+  running_mode = :open_mpi
+  num_procs = get_env_var('OMPI_COMM_WORLD_SIZE').to_i
+#NOTE: check presence of a step ID to ensure execution is within srun, not only sbatch
+elsif get_env_var('SLURM_STEP_ID', error = false)
+  proc_id = get_env_var('SLURM_PROCID', error = false)
+  running_mode = :srun
+  num_procs = get_env_var('SLURM_NTASKS').to_i
+else
+  cancel_job("run this executable only as part of a Slurm job")
+end
+
+proc_id = proc_id.to_i
 
 if find_option(opts_arr, 'help')
   if proc_id == 0
@@ -134,15 +149,14 @@ end
 
 cancel_job("no task provided - aborting", proc_id) if task_arr.empty?
 
-#TODO there is a per step version of most of these options(as opposed to per job?)
-#     may be best to swap
 job_id = get_job_id
-node = get_env_var('SLURMD_NODENAME')
-num_procs = get_env_var('SLURM_NTASKS').to_i
+#node = get_env_var('SLURMD_NODENAME')
+node, _stderr, _status = Open3.capture3("hostname")
+node.strip!
 #NOTE: this value is retreived from the system as there are slurm configuration
-#   options that obfuscate the true properties of nodes to slurm processes,
-#   which should be bypassed when analysing the system energy consumpton.
-num_cores, _stderr, _status = Open3.capture3("nproc")
+#   options that obfuscate the true properties of nodes to slurm processes.
+#   This obfuscation would confuse the data conclusions.
+num_cores, _stderr, _status = Open3.capture3("nproc --all")
 num_cores = num_cores.strip.to_i
 #NOTE: in slurm vocab, 'CPUS' usually (& in this case) actually refers to cores
 cpus_per_task = (get_env_var('SLURM_CPUS_PER_TASK', error = false) || 1).to_i
