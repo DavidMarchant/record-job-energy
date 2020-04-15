@@ -41,6 +41,14 @@ def cancel_job(message = nil, proc_id = nil)
   raise EnergyRecordError, message
 end
 
+def get_from_shell_cmd(cmd, proc_id)
+  stdout, stderr, status = Open3.capture3(cmd)
+  if not status.success?
+    cancel_job("error executing command '#{cmd}' - #{stderr}", proc_id)
+  end
+  return stdout.strip!
+end
+
 #looks for the provided option 'target_opt', return its value if it's in key-value format
 #   else returning true if found or nil if not
 #only the first match is considered, prioritising those with values
@@ -150,14 +158,11 @@ end
 cancel_job("no task provided - aborting", proc_id) if task_arr.empty?
 
 job_id = get_job_id
-#node = get_env_var('SLURMD_NODENAME')
-node, _stderr, _status = Open3.capture3("hostname")
-node.strip!
+node = get_from_shell_cmd('hostname', proc_id)
 #NOTE: this value is retreived from the system as there are slurm configuration
 #   options that obfuscate the true properties of nodes to slurm processes.
 #   This obfuscation would confuse the data conclusions.
-num_cores, _stderr, _status = Open3.capture3("nproc --all")
-num_cores = num_cores.strip.to_i
+num_cores = get_from_shell_cmd('nproc --all', proc_id).to_i
 #NOTE: in slurm vocab, 'CPUS' usually (& in this case) actually refers to cores
 cpus_per_task = (get_env_var('SLURM_CPUS_PER_TASK', error = false) || 1).to_i
 
