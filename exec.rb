@@ -17,7 +17,7 @@ def get_env_var(var, error = true)
     return ENV[var]
   else
     if error
-      cancel_job("ERROR - environment variable '#{var}' not found - aborting")
+      cancel_job("environment variable '#{var}' not found - aborting")
     else
       return nil
     end
@@ -28,11 +28,11 @@ def get_job_id(error = true)
   (get_env_var('SLURM_JOB_ID', error_=false) || get_env_var('SLURM_JOBID', error_=error)).to_i
 end
 
-def cancel_job(message = nil)
+def cancel_job(message = nil, proc_id = nil)
   #NOTE: need to not crash if job_id unavailable as an infinite loop is possible between
   #      this method and get_env_var
-  Open3.capture3("scancel #{get_job_id(error = false)}")
-  proc_id = get_env_var('SLURM_PROCID', error = false)
+  job_id = get_job_id(error = false)
+  Open3.capture3("scancel #{job_id}") if job_id
   message = if message and proc_id
               "Error in process #{proc_id} - #{message}"
             elsif message
@@ -132,7 +132,7 @@ RECORD-JOB-ENERGY HELP
   exit 0
 end
 
-cancel_job("no task provided - aborting") if task_arr.empty?
+cancel_job("no task provided - aborting", proc_id) if task_arr.empty?
 
 #TODO there is a per step version of most of these options(as opposed to per job?)
 #     may be best to swap
@@ -161,12 +161,12 @@ if proc_id == 0
   begin
     Dir.mkdir(top_directory) unless Dir.exists?(top_directory)
   rescue SystemCallError
-    cancel_job("Error while creating directory #{top_directory} - aborting")
+    cancel_job("Error while creating directory #{top_directory} - aborting", proc_id)
   end
   begin
     Dir.mkdir(out_directory) unless Dir.exists?(out_directory)
   rescue SystemCallError
-    cancel_job("Error while creating directory #{out_directory} - aborting")
+    cancel_job("Error while creating directory #{out_directory} - aborting", proc_id)
   end
 end
 
@@ -204,7 +204,7 @@ if proc_id == 0
       break
     #TODO start this recording from initial execution?
     elsif Time.now - t1 > time_limit
-      cancel_job("timeout waiting for processes to complete")
+      cancel_job("timeout waiting for processes to complete", proc_id)
     end
     sleep 1
   end
