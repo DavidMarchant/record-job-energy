@@ -233,7 +233,7 @@ if proc_id == 0
   per_node_data = {}
   Dir.glob(File.join(out_directory, '*')).each do |file|
     next if file == comms_file
-    proc_data = YAML.load(File.read(file))
+    proc_data = YAML.load_file(file)
     node_ = proc_data['node']
     node_proportion = (1.0/proc_data['num_cores'])*proc_data['cpus_per_task']
 
