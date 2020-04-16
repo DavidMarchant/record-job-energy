@@ -103,6 +103,14 @@ def read_energy(zones, tag)
   zones
 end
 
+def create_directory(directory, proc_id)
+  begin
+    Dir.mkdir(directory) unless Dir.exists?(directory)
+  rescue SystemCallError
+    cancel_job("Error while creating directory #{directory} - aborting", proc_id)
+  end
+end
+
 #treat first argument not starting with a hyphen as the begining of the task
 first_cmd = ARGV.index{ |arg| !arg.start_with?('-') }
 if first_cmd
@@ -176,17 +184,8 @@ comms_file = File.join(out_directory, "comms_file")
 out_file_path = File.join(out_directory, proc_id.to_s)
 
 if proc_id == 0
-  #TODO duplicate code
-  begin
-    Dir.mkdir(top_directory) unless Dir.exists?(top_directory)
-  rescue SystemCallError
-    cancel_job("Error while creating directory #{top_directory} - aborting", proc_id)
-  end
-  begin
-    Dir.mkdir(out_directory) unless Dir.exists?(out_directory)
-  rescue SystemCallError
-    cancel_job("Error while creating directory #{out_directory} - aborting", proc_id)
-  end
+  create_directory(top_directory, proc_id)
+  create_directory(out_directory, proc_id)
 end
 
 zones = get_zone_info
