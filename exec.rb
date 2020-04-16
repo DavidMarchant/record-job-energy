@@ -2,8 +2,6 @@
 require 'open3'
 require 'yaml'
 
-#TODO test with ruby==2.0
-
 EnergyRecordError = Class.new(RuntimeError)
 
 #TODO may need to set this dynamically
@@ -219,10 +217,8 @@ _, _, _ = Open3.capture3("echo 'process #{proc_id} completed' >> #{comms_file}")
 if proc_id == 0
   t1 = Time.now
   time_limit = find_option(opts_arr, /t|timeout/) || 600
-  #NOTE: hung here with a local /opt/slurm/bin/sbatch -n 2 run-exec.sh for some reason
-  # only got 1 output file & so the line count did nae work
   while true
-    if File.open(comms_file,"r").readlines.count == num_procs
+    if File.open(comms_file, "r").readlines.count == num_procs
       break
     #TODO start this recording from initial execution?
     elsif Time.now - t1 > time_limit
@@ -230,7 +226,7 @@ if proc_id == 0
     end
     sleep 1
   end
-  per_node_data = {}
+  per_node_data = {total: 0}
   Dir.glob(File.join(out_directory, '*')).each do |file|
     next if file == comms_file
     proc_data = YAML.load_file(file)
@@ -248,6 +244,7 @@ if proc_id == 0
       change = (zone[:finishing_energy]-zone[:starting_energy])*node_proportion
       per_node_data[node_][:zones][zone_name_] ||= 0
       per_node_data[node_][:zones][zone_name_] += change
+      per_node_data[:total] += change
     end
   end
   yaml_per_node_data = per_node_data.to_yaml
