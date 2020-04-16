@@ -192,11 +192,15 @@ end
 zones = get_zone_info
 
 read_energy(zones, "starting_energy")
-#TODO capture errors from this, do we crash out?
-stdout, stderr, status = Open3.capture3(task_arr.join(' '))
+Open3.popen2e(task_arr.join(' ')) do |stdin, stdout_and_stderr, wait_thr|
+  while line = stdout_and_stderr.gets do
+    puts line
+  end
+  unless wait_thr.value.success?
+    cancel_job("task #{task_arr.join(' ')} failed", proc_id)
+  end
+end
 read_energy(zones, "finishing_energy")
-
-print stdout.empty? ? stderr : stdout
 
 proc_data = {'node' => node,
              'num_cores' => num_cores,
