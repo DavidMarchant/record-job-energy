@@ -88,8 +88,8 @@ def get_zone_info
 	zone_info = []
 	zone_dirs.each do |dir|
 		info_hash = {}
-		info_hash['path'] = dir
-		info_hash['name'] = find_zone_name(dir)
+		info_hash[:path] = dir
+		info_hash[:name] = find_zone_name(dir)
 		zone_info << info_hash
 	end
 	zone_info
@@ -98,7 +98,7 @@ end
 #take as input zone information in form output from get_zone_info
 def read_energy(zones, tag)
   zones.each do |zone|
-    zone[tag] = read_first_line(File.join(zone['path'], 'energy_uj')).to_i
+    zone[tag.to_sym] = read_first_line(File.join(zone[:path], 'energy_uj')).to_i
   end
   zones
 end
@@ -190,7 +190,7 @@ end
 
 zones = get_zone_info
 
-read_energy(zones, "starting_energy")
+read_energy(zones, :starting_energy)
 Open3.popen2e(task_arr.join(' ')) do |stdin, stdout_and_stderr, wait_thr|
   while line = stdout_and_stderr.gets do
     puts line
@@ -199,14 +199,14 @@ Open3.popen2e(task_arr.join(' ')) do |stdin, stdout_and_stderr, wait_thr|
     cancel_job("task #{task_arr.join(' ')} failed", proc_id)
   end
 end
-read_energy(zones, "finishing_energy")
+read_energy(zones, :finishing_energy)
 
-proc_data = {'node' => node,
-             'num_cores' => num_cores,
-             'job_id' => job_id,
-             'proc_id' => proc_id,
-             'cpus_per_task' => cpus_per_task,
-             'zones' => zones}
+proc_data = {node: node,
+             num_cores: num_cores,
+             job_id: job_id,
+             proc_id: proc_id,
+             cpus_per_task: cpus_per_task,
+             zones: zones}
 
 yaml_proc_data = proc_data.to_yaml
 File.open(out_file_path, 'w') { |f| f.write(yaml_proc_data) }
@@ -234,20 +234,20 @@ if proc_id == 0
   Dir.glob(File.join(out_directory, '*')).each do |file|
     next if file == comms_file
     proc_data = YAML.load_file(file)
-    node_ = proc_data['node']
-    node_proportion = (1.0/proc_data['num_cores'])*proc_data['cpus_per_task']
+    node_ = proc_data[:node]
+    node_proportion = (1.0/proc_data[:num_cores])*proc_data[:cpus_per_task]
 
     per_node_data[node_] ||= {}
-    per_node_data[node_]['num_cores'] = proc_data['num_cores']
-    per_node_data[node_]['cores_used'] ||= 0
-    per_node_data[node_]['cores_used'] += proc_data['cpus_per_task']
-    per_node_data[node_]['zones'] ||= {}
+    per_node_data[node_][:num_cores] = proc_data[:num_cores]
+    per_node_data[node_][:cores_used] ||= 0
+    per_node_data[node_][:cores_used] += proc_data[:cpus_per_task]
+    per_node_data[node_][:zones] ||= {}
 
-    proc_data['zones'].each do |zone|
-      zone_name_ = zone['name'].join('-->')
-      change = (zone['finishing_energy']-zone['starting_energy'])*node_proportion
-      per_node_data[node_]['zones'][zone_name_] ||= 0
-      per_node_data[node_]['zones'][zone_name_] += change
+    proc_data[:zones].each do |zone|
+      zone_name_ = zone[:name].join('-->')
+      change = (zone[:finishing_energy]-zone[:starting_energy])*node_proportion
+      per_node_data[node_][:zones][zone_name_] ||= 0
+      per_node_data[node_][:zones][zone_name_] += change
     end
   end
   yaml_per_node_data = per_node_data.to_yaml
