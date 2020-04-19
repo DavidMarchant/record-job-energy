@@ -97,7 +97,9 @@ end
 #take as input zone information in form output from get_zone_info
 def read_energy(zones, tag)
   zones.each do |zone|
-    zone[tag.to_sym] = read_first_line(File.join(zone[:path], 'energy_uj')).to_i
+    zone[tag.to_sym] = {time: Time.now,
+                        energy: read_first_line(File.join(zone[:path], 'energy_uj')).to_i
+                       }
   end
   zones
 end
@@ -234,7 +236,11 @@ if proc_id == 0
     node_ = proc_data[:node]
     node_proportion = (1.0/proc_data[:num_cores])*proc_data[:cpus_per_task]
 
-    per_node_data[node_] ||= {}
+    #NOTE Time.at((2**31)-1) gives the maximum possible time value
+    #     so all others will be lesser
+    per_node_data[node_] ||= {start_time: Time.at((2**31)-1),
+                              finish_time: Time.at(0)
+                             }
     per_node_data[node_][:num_cores] = proc_data[:num_cores]
     per_node_data[node_][:cores_used] ||= 0
     per_node_data[node_][:cores_used] += proc_data[:cpus_per_task]
@@ -242,9 +248,15 @@ if proc_id == 0
 
     proc_data[:zones].each do |zone|
       zone_name_ = zone[:name].join('-->')
-      change = (zone[:finishing_energy]-zone[:starting_energy])*node_proportion
+      change = (zone[:finishing_energy][:energy]-zone[:starting_energy][:energy])*node_proportion
       per_node_data[node_][:zones][zone_name_] ||= 0
       per_node_data[node_][:zones][zone_name_] += change
+      if per_node_data[node_][:start_time] > zone[:starting_energy][:time]
+        per_node_data[node_][:start_time] = zone[:starting_energy][:time]
+      end
+      if per_node_data[node_][:finish_time] < zone[:finishing_energy][:time]
+        per_node_data[node_][:finish_time] = zone[:finishing_energy][:time]
+      end
       per_node_data[:total] += change
     end
   end
