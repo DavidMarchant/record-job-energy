@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 require 'open3'
 require 'yaml'
+require 'fileutils'
 
 EnergyRecordError = Class.new(RuntimeError)
 
@@ -103,7 +104,7 @@ end
 
 def create_directory(directory, proc_id)
   begin
-    Dir.mkdir(directory) unless Dir.exists?(directory)
+    FileUtils.mkdir_p(directory) unless Dir.exists?(directory)
   rescue SystemCallError
     cancel_job("Error while creating directory #{directory} - aborting", proc_id)
   end
@@ -164,6 +165,7 @@ end
 cancel_job("no task provided - aborting", proc_id) if task_arr.empty?
 
 job_id = get_job_id
+step_id = (get_env_var('SLURM_STEP_ID', error = false) || 0).to_i
 node = get_from_shell_cmd('hostname', proc_id)
 #NOTE: this value is retreived from the system as there are slurm configuration
 #   options that obfuscate the true properties of nodes to slurm processes.
@@ -177,12 +179,11 @@ cpus_per_task = (get_env_var('SLURM_CPUS_PER_TASK', error = false) || 1).to_i
 #NOTE: SLURM_SUBMIT_DIR - The directory from which srun was invoked or, if applicable, the directory specified by the -D, --chdir option
 #__dir__ can only be used for ruby >= 2.0 but  doesn't change if chdir is called
 top_directory = find_option(opts_arr, /d|directory/) || DEFAULTS[:out_directory]
-out_directory = File.join(top_directory, job_id.to_s)
+out_directory = File.join(top_directory, job_id.to_s, step_id.to_s)
 comms_file = File.join(out_directory, "comms_file")
 out_file_path = File.join(out_directory, proc_id.to_s)
 
 if proc_id == 0
-  create_directory(top_directory, proc_id)
   create_directory(out_directory, proc_id)
 end
 
