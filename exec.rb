@@ -1,7 +1,9 @@
 #!/usr/bin/env ruby
+
 require 'open3'
 require 'yaml'
 require 'fileutils'
+require 'rubygems'
 
 EnergyRecordError = Class.new(RuntimeError)
 
@@ -28,14 +30,12 @@ def get_job_id(error = true)
 end
 
 def cancel_job(message = nil, proc_id = nil)
-  #NOTE: need to not crash if job_id unavailable as an infinite loop is possible between
-  #      this method and get_env_var
   job_id = get_job_id(error = false)
   Open3.capture3("scancel #{job_id}") if job_id
   message = if message and proc_id
-              "Error in process #{proc_id} - #{message}"
+              "Record Job Energy error in process #{proc_id} - #{message}"
             elsif message
-              "Error - #{message}"
+              "Record Job Energy error - #{message}"
             end
   raise EnergyRecordError, message
 end
@@ -110,6 +110,10 @@ def create_directory(directory, proc_id)
   rescue SystemCallError
     cancel_job("Error while creating directory #{directory} - aborting", proc_id)
   end
+end
+
+if Gem::Version.new(RUBY_VERSION) < Gem::Version.new('2.0.0')
+  puts "Record Job Energy WARNING - using Ruby version #{RUBY_VERSION}, recommended is 2.0.0 or later"
 end
 
 #treat first argument not starting with a hyphen as the begining of the task
@@ -211,7 +215,6 @@ proc_data = {node: node,
 
 yaml_proc_data = proc_data.to_yaml
 File.open(out_file_path, 'w') { |f| f.write(yaml_proc_data) }
-
 
 #NOTE: this is done as a system call to make use of any distributed filesystem's
 #   concurrency control
