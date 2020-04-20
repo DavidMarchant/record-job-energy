@@ -187,10 +187,18 @@ cpus_per_task = (get_env_var('SLURM_CPUS_PER_TASK', error = false) || 1).to_i
 top_directory = find_option(opts_arr, /d|directory/) || DEFAULTS[:out_directory]
 out_directory = File.join(top_directory, job_id.to_s, step_id.to_s)
 comms_file = File.join(out_directory, "comms_file")
+job_info_file = File.join(out_directory, "job_info")
 out_file_path = File.join(out_directory, proc_id.to_s)
 
 if proc_id == 0
   create_directory(out_directory, proc_id)
+  job_info = { job_id: job_id,
+               task: task_arr.join(' '),
+               parallel_cmd: running_mode.to_s,
+               num_procs: num_procs,
+             }
+  yaml_job_info = job_info.to_yaml
+  File.open(job_info_file, 'w') { |f| f.write(yaml_job_info) }
 end
 
 zones = get_zone_info
@@ -234,7 +242,8 @@ if proc_id == 0
   end
   per_node_data = {total: 0}
   Dir.glob(File.join(out_directory, '*')).each do |file|
-    next if file == comms_file
+    #only process files with a proc id as a name
+    next unless File.basename(file).to_i.to_s == File.basename(file)
     proc_data = YAML.load_file(file)
     node_ = proc_data[:node]
     node_proportion = (1.0/proc_data[:num_cores])*proc_data[:cpus_per_task]
@@ -263,6 +272,7 @@ if proc_id == 0
       per_node_data[:total] += change
     end
   end
+  per_node_data[:job_info] = job_info
   yaml_per_node_data = per_node_data.to_yaml
   totals_out_file_path = File.join(out_directory, "totalled_data")
   File.open(totals_out_file_path, 'w') { |f| f.write(yaml_per_node_data) }
