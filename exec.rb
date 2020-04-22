@@ -97,9 +97,8 @@ end
 #take as input zone information in form output from get_zone_info
 def read_energy(zones, tag)
   zones.each do |zone|
-    zone[tag.to_sym] = {time: Time.now,
-                        energy: read_first_line(File.join(zone[:path], 'energy_uj')).to_i
-                       }
+    energy = read_first_line(File.join(zone[:path], 'energy_uj')).to_i
+    zone[tag.to_sym] = {time: Time.now, energy: energy, unit: 'uj'}
   end
   zones
 end
@@ -238,7 +237,7 @@ if proc_id == 0
     end
     sleep 1
   end
-  per_node_data = {total: 0}
+  per_node_data = {total: 0, units: 'Joules'}
   Dir.glob(File.join(out_directory, '*')).each do |file|
     #only process files with a proc id as a name
     next unless File.basename(file).to_i.to_s == File.basename(file)
@@ -258,16 +257,21 @@ if proc_id == 0
 
     proc_data[:zones].each do |zone|
       zone_name_ = zone[:name].join('-->')
-      change = (zone[:finishing_energy][:energy]-zone[:starting_energy][:energy])*node_proportion
+      change = (zone[:finishing_energy][:energy]-zone[:starting_energy][:energy])
+      change = change.to_f / 1000000 if zone[:unit] = 'uj'
+      process_change = change*node_proportion
       per_node_data[node_][:zones][zone_name_] ||= 0
-      per_node_data[node_][:zones][zone_name_] += change
+      per_node_data[node_][:zones][zone_name_] += process_change
+      per_node_data[node_][:node_total] ||= 0
+      per_node_data[node_][:node_total] += process_change
+
       if per_node_data[node_][:start_time] > zone[:starting_energy][:time]
         per_node_data[node_][:start_time] = zone[:starting_energy][:time]
       end
       if per_node_data[node_][:finish_time] < zone[:finishing_energy][:time]
         per_node_data[node_][:finish_time] = zone[:finishing_energy][:time]
       end
-      per_node_data[:total] += change
+      per_node_data[:total] += process_change
     end
   end
   per_node_data[:job_info] = job_info
