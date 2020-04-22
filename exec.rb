@@ -124,7 +124,7 @@ else
 end
 
 if get_env_var('SLURM_PROCID', error = false).nil?
-  cancel_job("run this executable only as part of a Slurm job")
+  cancel_job("run this executable only as part of a Slurm job, using srun or mpiexec")
 end
 
 if proc_id = get_env_var('PMI_RANK', error = false)
@@ -139,14 +139,13 @@ elsif get_env_var('SLURM_STEP_ID', error = false)
   running_mode = :srun
   num_procs = get_env_var('SLURM_NTASKS').to_i
 else
-  cancel_job("run this executable only as part of a Slurm job")
+  cancel_job("run this executable only as part of a Slurm job, using srun or mpiexec")
 end
 
 proc_id = proc_id.to_i
 
 if find_option(opts_arr, 'help')
   if proc_id == 0
-    #TODO update as progress proceeds
     puts <<-help_str
 RECORD-JOB-ENERGY HELP
   This script should be executed as:
@@ -179,10 +178,6 @@ num_cores = get_from_shell_cmd('nproc --all', proc_id).to_i
 #NOTE: in slurm vocab, 'CPUS' usually (& in this case) actually refers to cores
 cpus_per_task = (get_env_var('SLURM_CPUS_PER_TASK', error = false) || 1).to_i
 
-#NOTE: could use SLURM_LAUNCH_NODE_IPADDR to send data back to the launching node rather than use
-#     the flesystem. This can avoid issues with distributed filesystem, access rights, etc.
-#NOTE: SLURM_SUBMIT_DIR - The directory from which srun was invoked or, if applicable, the directory specified by the -D, --chdir option
-#__dir__ can only be used for ruby >= 2.0 but  doesn't change if chdir is called
 top_directory = find_option(opts_arr, /d|directory/) || DEFAULTS[:out_directory]
 out_directory = File.join(top_directory, job_id.to_s, step_id.to_s)
 job_info_file = File.join(out_directory, "job_info")
