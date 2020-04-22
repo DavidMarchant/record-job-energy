@@ -225,15 +225,15 @@ File.open(out_file_path, 'w') { |f| f.write(yaml_proc_data) }
 
 if proc_id == 0
   t1 = Time.now
-  time_limit = find_option(opts_arr, /t|timeout/) || 600
+  time_limit = find_option(opts_arr, /t|timeout/)
+  time_limit = 600 if time_limit.nil? or time_limit == true
   while true
     process_files = Dir.entries(out_directory).select do |file|
       file.to_i.to_s == file
     end
     if process_files.length == num_procs
       break
-    #TODO start this recording from initial execution?
-    elsif Time.now - t1 > time_limit
+    elsif Time.now - t1 > time_limit.to_i
       cancel_job("timeout waiting for processes to complete", proc_id)
     end
     sleep 1
@@ -248,7 +248,7 @@ if proc_id == 0
 
     #NOTE Time.at((2**31)-1) gives the maximum possible time value
     #     so all others will be lesser
-    per_node_data[node_] ||= {start_time: Time.at((2**31)-1),
+    per_node_data[node_] ||= {start_time: Time.at(max_time = (2**31)-1),
                               finish_time: Time.at(0)
                              }
     per_node_data[node_][:num_cores] = proc_data[:num_cores]
