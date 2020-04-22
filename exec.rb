@@ -260,6 +260,7 @@ if proc_id == 0
       change = (zone[:finishing_energy][:energy]-zone[:starting_energy][:energy])
       change = change.to_f / 1000000 if zone[:unit] = 'uj'
       process_change = change*node_proportion
+      process_change = process_change.round(7)
       per_node_data[node_][:zones][zone_name_] ||= 0
       per_node_data[node_][:zones][zone_name_] += process_change
       per_node_data[node_][:node_total] ||= 0
