@@ -186,7 +186,6 @@ cpus_per_task = (get_env_var('SLURM_CPUS_PER_TASK', error = false) || 1).to_i
 #__dir__ can only be used for ruby >= 2.0 but  doesn't change if chdir is called
 top_directory = find_option(opts_arr, /d|directory/) || DEFAULTS[:out_directory]
 out_directory = File.join(top_directory, job_id.to_s, step_id.to_s)
-comms_file = File.join(out_directory, "comms_file")
 job_info_file = File.join(out_directory, "job_info")
 out_file_path = File.join(out_directory, proc_id.to_s)
 
@@ -224,15 +223,14 @@ proc_data = {node: node,
 yaml_proc_data = proc_data.to_yaml
 File.open(out_file_path, 'w') { |f| f.write(yaml_proc_data) }
 
-#NOTE: this is done as a system call to make use of any distributed filesystem's
-#   concurrency control
-_, _, _ = Open3.capture3("echo 'process #{proc_id} completed' >> #{comms_file}")
-
 if proc_id == 0
   t1 = Time.now
   time_limit = find_option(opts_arr, /t|timeout/) || 600
   while true
-    if File.open(comms_file, "r").readlines.count == num_procs
+    process_files = Dir.entries(out_directory).select do |file|
+      file.to_i.to_s == file
+    end
+    if process_files.length == num_procs
       break
     #TODO start this recording from initial execution?
     elsif Time.now - t1 > time_limit
