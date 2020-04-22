@@ -26,7 +26,9 @@ def get_env_var(var, error = true)
 end
 
 def get_job_id(error = true)
-  (get_env_var('SLURM_JOB_ID', error_=false) || get_env_var('SLURM_JOBID', error_=error)).to_i
+  job_id = get_env_var('SLURM_JOB_ID', error_=false)
+  job_id = get_env_var('SLURM_JOBID', error_=error) unless job_id
+  job_id.to_i
 end
 
 def cancel_job(message = nil, proc_id = nil)
@@ -48,8 +50,8 @@ def get_from_shell_cmd(cmd, proc_id)
   return stdout.strip!
 end
 
-#looks for the provided option 'target_opt', return its value if it's in key-value format
-#   else returning true if found or nil if not
+#looks for the provided option 'target_opt', return its value if it's in
+#   key-value format else returning true if found or nil if not
 #only the first match is considered, prioritising those with values
 def find_option(opts_arr, target_opt)
   match_data = nil
@@ -81,7 +83,8 @@ end
 
 #returns a list of hashes containing info on each of this node's powercap zones
 def get_zone_info
-	zone_dirs = Dir.glob(File.join(POWERCAP_ROOT_DIR, '**', '*energy_uj')).map! do |file|
+	zone_dirs = Dir.glob(File.join(POWERCAP_ROOT_DIR, '**', '*energy_uj'))
+  zone_dirs.map! do |file|
 		File.dirname(file)
 	end
 	zone_info = []
@@ -133,7 +136,8 @@ if proc_id = get_env_var('PMI_RANK', error = false)
 elsif proc_id = get_env_var('OMPI_COMM_WORLD_RANK', error = false)
   running_mode = :open_mpi
   num_procs = get_env_var('OMPI_COMM_WORLD_SIZE').to_i
-#NOTE: check presence of a step ID to ensure execution is within srun, not only sbatch
+#NOTE: check presence of a step ID to ensure execution is within srun
+#   not only sbatch
 elsif get_env_var('SLURM_STEP_ID', error = false)
   proc_id = get_env_var('SLURM_PROCID', error = false)
   running_mode = :srun
