@@ -145,7 +145,6 @@ elsif get_env_var('SLURM_STEP_ID', error = false)
 else
   cancel_job("run this executable only as part of a Slurm job, using srun or mpiexec")
 end
-
 proc_id = proc_id.to_i
 
 if find_option(opts_arr, 'help')
@@ -173,7 +172,6 @@ end
 cancel_job("no task provided - aborting", proc_id) if task_arr.empty?
 
 job_id = get_job_id
-step_id = (get_env_var('SLURM_STEP_ID', error = false) || 0).to_i
 node = get_from_shell_cmd('hostname', proc_id)
 #NOTE: this value is retreived from the system as there are slurm configuration
 #   options that obfuscate the true properties of nodes to slurm processes.
@@ -183,7 +181,20 @@ num_cores = get_from_shell_cmd('nproc --all', proc_id).to_i
 cpus_per_task = (get_env_var('SLURM_CPUS_PER_TASK', error = false) || 1).to_i
 
 top_directory = find_option(opts_arr, /d|directory/) || DEFAULTS[:out_directory]
-out_directory = File.join(top_directory, job_id.to_s, step_id.to_s)
+job_directory = File.join(top_directory, job_id.to_s)
+unless step_id = get_env_var('SLURM_STEP_ID', error = false)
+  #NOTE: known issue where, under OpenMPI, the root process of mpiexec will not
+  #   receive some environment variables that others will. In this case the
+  #   value of the step must be discerned from the size of the job's directory
+  if running_mode == :open_mpi
+    #NOTE: -2 because '.' and '..' are present in all directories
+    step_id = Dir.exist?(job_directory) ? Dir.entries(job_directory).length-2 : 0
+  else
+    step_id = get_env_var('SLURM_STEP_ID', error = true)
+  end
+end
+step_id = step_id.to_i
+out_directory = File.join(job_directory, step_id.to_s)
 job_info_file = File.join(out_directory, "job_info")
 out_file_path = File.join(out_directory, proc_id.to_s)
 
