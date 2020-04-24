@@ -7,7 +7,6 @@ require 'rubygems'
 
 EnergyRecordError = Class.new(RuntimeError)
 
-#TODO may need to set this dynamically
 POWERCAP_ROOT_DIR = '/sys/devices/virtual/powercap'
 DEFAULTS = {out_directory: File.join(__dir__, 'record-job-energy-data'),
             timeout: 600,
@@ -195,18 +194,19 @@ unless step_id = get_env_var('SLURM_STEP_ID', error = false)
 end
 step_id = step_id.to_i
 out_directory = File.join(job_directory, step_id.to_s)
-job_info_file = File.join(out_directory, "job_info")
+step_info_path = File.join(out_directory, "step_info")
 out_file_path = File.join(out_directory, proc_id.to_s)
 
 if proc_id == 0
   create_directory(out_directory, proc_id)
-  job_info = { job_id: job_id,
+  step_info = { job_id: job_id,
+               step_id: step_id,
                task: task_arr.join(' '),
                parallel_cmd: running_mode.to_s,
                num_procs: num_procs,
              }
-  yaml_job_info = job_info.to_yaml
-  File.open(job_info_file, 'w') { |f| f.write(yaml_job_info) }
+  yaml_step_info = step_info.to_yaml
+  File.open(step_info_path, 'w') { |f| f.write(yaml_step_info) }
 end
 
 zones = get_zone_info
@@ -225,6 +225,7 @@ read_energy(zones, :finishing_energy)
 proc_data = {node: node,
              num_cores: num_cores,
              job_id: job_id,
+             step_id: step_id,
              proc_id: proc_id,
              cpus_per_task: cpus_per_task,
              zones: zones}
@@ -285,7 +286,7 @@ if proc_id == 0
       per_node_data[:total] += process_change
     end
   end
-  per_node_data[:job_info] = job_info
+  per_node_data[:step_info] = step_info
   yaml_per_node_data = per_node_data.to_yaml
   totals_out_file_path = File.join(out_directory, "totalled_data")
   File.open(totals_out_file_path, 'w') { |f| f.write(yaml_per_node_data) }
