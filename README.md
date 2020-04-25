@@ -11,7 +11,7 @@ has only been tested on RHEL-derivative RAPL systems.
 
 Requires Ruby version >= 2.0.0.
 
-`curl https://raw.githubusercontent.com/DavidMarchant/record-job-energy/master/exec.rb > record-job-energy.rb`
+`curl https://raw.githubusercontent.com/DavidMarchant/record-job-energy/master/record-job-energy.rb > record-job-energy.rb`
 
 ## Use
 
