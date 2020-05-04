@@ -5,6 +5,8 @@ require 'open3'
 require 'rubygems'
 require 'yaml'
 
+#To facilitate the condition in the StandardError, raise this only within the
+# cancel job method. This is to prevent attempting to scancel twice.
 EnergyRecordError = Class.new(RuntimeError)
 
 POWERCAP_ROOT_DIR = '/sys/devices/virtual/powercap'
@@ -28,6 +30,8 @@ RECORD-JOB-ENERGY HELP
       Display this message and exit
 help_str
 
+# Retrieve the specified environment variable
+# Optionally, will error if not found
 def get_env_var(var, error = true)
   if ENV[var]
     return ENV[var]
@@ -40,12 +44,15 @@ def get_env_var(var, error = true)
   end
 end
 
+# Retrieve the Slurm job's ID. 2 different keys for backwards compatibility
 def get_job_id(error = true)
   job_id = get_env_var('SLURM_JOB_ID', error_ = false)
   job_id = get_env_var('SLURM_JOBID', error_ = error) unless job_id
   job_id.to_i
 end
 
+
+# Retrieve the Slurm step's ID
 def get_step_id(job_directory, error = true)
   unless step_id = get_env_var('SLURM_STEP_ID', error = false)
     #NOTE: known issue where, under OpenMPI, the root process of mpiexec will not
@@ -61,14 +68,15 @@ def get_step_id(job_directory, error = true)
   step_id.to_i
 end
 
+# Retrieve the output directory for the job
 def get_job_directory(job_id)
   top_directory = find_option(/d|directory/) || DEFAULTS[:out_directory]
   return File.join(top_directory, job_id.to_s)
 end
 
-#Cancel the slurm job
-#Can be passed a job_id and/or a step_id, will try retrieve them if not
-#If found will cancel the Slurm job and raise an error
+# Cancel the Slurm job
+# Can be passed a job_id and/or a step_id, will try retrieve them if not
+# If found will cancel the Slurm job and raise an error
 # if not will just raise an error
 def cancel_job(message, job_id = nil, step_id = nil, proc_id = nil)
   job_id = get_job_id(error = false) unless job_id
@@ -84,12 +92,14 @@ def cancel_job(message, job_id = nil, step_id = nil, proc_id = nil)
   raise EnergyRecordError, message
 end
 
+# System-call 'scancel', Slurm's job cancelling command
 def scancel(job_id, step_id = nil)
   target = job_id.to_s
   target += ".#{step_id.to_s}" if step_id
   Open3.capture2e("scancel #{target}")
 end
 
+# Execute a system-call to retrieve its stdout
 def get_from_shell_cmd(cmd, proc_id)
   stdout, stderr, status = Open3.capture3(cmd)
   if not status.success?
@@ -98,9 +108,10 @@ def get_from_shell_cmd(cmd, proc_id)
   return stdout.strip!
 end
 
-#looks for the provided option 'target_opt', return its value if it's in
+# Look for an option in the script's options
+# Looks for the provided option 'target_opt', return its value if it's in
 #   key-value format else returning true if found or nil if not
-#only the first match is considered, prioritising those with values
+# Only the first match is considered, prioritising those with values
 def find_option(target_opt)
   match_data = nil
   if $opts_arr.find { |opt| match_data = opt.match(/^--?#{target_opt}=(\S+)$/) }
@@ -112,10 +123,14 @@ def find_option(target_opt)
   end
 end
 
+# System call to retrieve the first line of a file without loading it into
+#   memory
 def read_first_line(file)
   `head -n 1 #{file}`.strip
 end
 
+# Retrieve the name of a powercap zone from its directory by recursively adding
+#   the names of its parents
 def find_zone_name(dir)
   cur_dir = dir
   name_arr = []
@@ -129,7 +144,7 @@ def find_zone_name(dir)
   name_arr.unshift(File.basename(cur_dir))
 end
 
-#returns a list of hashes containing info on each of this node's powercap zones
+# Retrieve a list of hashes containing info on each of the node's powercap zones
 def get_zone_info
 	zone_dirs = Dir.glob(File.join(POWERCAP_ROOT_DIR, '**', '*energy_uj'))
   zone_dirs.map! do |file|
@@ -145,7 +160,8 @@ def get_zone_info
 	zone_info
 end
 
-#take as input zone information in form output from get_zone_info
+# Take an energy reading for each powercap zone, takes as input the output of
+#   get_zone_info. Labels readings with 'tag'
 def read_energy(zones, tag)
   zones.each do |zone|
     energy = read_first_line(File.join(zone[:path], 'energy_uj')).to_i
@@ -154,6 +170,7 @@ def read_energy(zones, tag)
   zones
 end
 
+# Directory creating utility method
 def create_directory(directory, proc_id)
   begin
     FileUtils.mkdir_p(directory) unless Dir.exists?(directory)
@@ -167,7 +184,7 @@ begin
     STDERR.puts "Record Job Energy WARNING - using Ruby version #{RUBY_VERSION}, recommended is 2.0.0 or later"
   end
 
-  #treat first argument not starting with a hyphen as the begining of the task
+  # Treat first argument not starting with a hyphen as the beginning of the task
   first_cmd = ARGV.index{ |arg| !arg.start_with?('-') }
   if first_cmd
     $opts_arr, $task_arr = ARGV.slice(0, first_cmd), ARGV.slice(first_cmd, ARGV.length)
@@ -213,13 +230,14 @@ begin
   end
 
   node = get_from_shell_cmd('hostname', proc_id)
-  #NOTE: this value is retreived from the system as there are slurm configuration
-  #   options that obfuscate the true properties of nodes to slurm processes.
+  #NOTE: this value is retrieved from the system as there are Slurm configuration
+  #   options that obfuscate the true properties of nodes to Slurm processes.
   #   This obfuscation would confuse the data conclusions.
   num_cores = get_from_shell_cmd('nproc --all', proc_id).to_i
-  #NOTE: in slurm vocab, 'CPUS' usually (& in this case) actually refers to cores
+  #NOTE: in Slurm vocab, 'CPUS' usually (& in this case) actually refers to cores
   cpus_per_task = (get_env_var('SLURM_CPUS_PER_TASK', error = false) || 1).to_i
 
+  #Create a file for debugging with info on the current step
   if proc_id == 0
     create_directory(out_directory, proc_id)
     step_info_path = File.join(out_directory, "step_info")
@@ -246,6 +264,7 @@ begin
   end
   read_energy(zones, :finishing_energy)
 
+  # Write this process's data to a file
   proc_data = {node: node,
                num_cores: num_cores,
                job_id: job_id,
@@ -253,12 +272,13 @@ begin
                proc_id: proc_id,
                cpus_per_task: cpus_per_task,
                zones: zones}
-
   out_file_path = File.join(out_directory, proc_id.to_s)
   yaml_proc_data = proc_data.to_yaml
   File.open(out_file_path, 'w') { |f| f.write(yaml_proc_data) }
 
   if proc_id == 0
+    # Wait for other tasks to complete execution. Test this with the number of
+    # files in the output directory named for a process ID (i.e. an integer)
     t1 = Time.now
     time_limit = find_option(/t|timeout/)
     time_limit = DEFAULTS[:timeout] if time_limit.nil? or time_limit == true
@@ -274,6 +294,8 @@ begin
       end
       sleep 1
     end
+
+    # Total the processes data into a single file and output it.
     per_node_data = {total: 0, units: 'Joules'}
     Dir.glob(File.join(out_directory, '*')).each do |file|
       #only process files with a proc id as a name
@@ -319,6 +341,8 @@ begin
     totals_out_file_path = File.join(out_directory, "totalled_data")
     File.open(totals_out_file_path, 'w') { |f| f.write(yaml_per_node_data) }
   end
+# Rescue any StandardError during execution with a call to cancel the Slurm job.
+#   Then re-raise the exception.
 rescue => e
   raise e if e.is_a?(EnergyRecordError)
   step_id ||= nil
