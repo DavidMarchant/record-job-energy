@@ -51,7 +51,7 @@ def get_step_id(job_directory, error = true)
     #NOTE: known issue where, under OpenMPI, the root process of mpiexec will not
     #   receive some environment variables that others will. In this case the
     #   value of the step must be discerned from the size of the job's directory
-    if $running_mode == :open_mpi
+    if $running_mode and $running_mode == :open_mpi
       #NOTE: -2 because '.' and '..' are present in all directories
       step_id = Dir.exist?(job_directory) ? Dir.entries(job_directory).length-2 : 0
     else
