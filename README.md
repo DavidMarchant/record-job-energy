@@ -23,9 +23,6 @@ implementations have been tested.
 
 ### Options
 
-NB: So that the program can distinguish between its options and the provided
-task there can be no spaces between options and their values.
-
 -t/--timeout=INTEGER
   The amount of time, in seconds, the root process will wait for the other
   processes to return before assuming that it has silently failed.
@@ -33,6 +30,8 @@ task there can be no spaces between options and their values.
 -d/--directory=PATH
   The directory to use as the top level of the data store.
   Default is script_directory/record-job-energy-data
+--help
+  Displays a help string and exits.
 
 ### Output
 
