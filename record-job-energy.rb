@@ -263,6 +263,8 @@ if proc_id == 0
                               finish_time: Time.at(0)
                              }
     per_node_data[node_][:num_cores] = proc_data[:num_cores]
+    per_node_data[node_][:num_procs] ||= 0
+    per_node_data[node_][:num_procs] += 1
     per_node_data[node_][:cores_used] ||= 0
     per_node_data[node_][:cores_used] += proc_data[:cpus_per_task]
     per_node_data[node_][:zones] ||= {}
