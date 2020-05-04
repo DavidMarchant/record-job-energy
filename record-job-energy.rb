@@ -112,7 +112,10 @@ end
 
 # Retrieve the output directory for the job
 def get_job_directory(job_id)
-  top_directory = find_option(/d|directory/) || DEFAULTS[:out_directory]
+  top_directory = find_option(/d|directory/)
+  if not top_directory or top_directory == true
+    top_directory = DEFAULTS[:out_directory]
+  end
   return File.join(top_directory, job_id.to_s)
 end
 
