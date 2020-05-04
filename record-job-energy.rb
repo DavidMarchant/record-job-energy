@@ -162,159 +162,166 @@ def create_directory(directory, proc_id)
   end
 end
 
-if Gem::Version.new(RUBY_VERSION) < Gem::Version.new('2.0.0')
-  puts "Record Job Energy WARNING - using Ruby version #{RUBY_VERSION}, recommended is 2.0.0 or later"
-end
+begin
+  if Gem::Version.new(RUBY_VERSION) < Gem::Version.new('2.0.0')
+    STDERR.puts "Record Job Energy WARNING - using Ruby version #{RUBY_VERSION}, recommended is 2.0.0 or later"
+  end
 
-#treat first argument not starting with a hyphen as the begining of the task
-first_cmd = ARGV.index{ |arg| !arg.start_with?('-') }
-if first_cmd
-  $opts_arr, $task_arr = ARGV.slice(0, first_cmd), ARGV.slice(first_cmd, ARGV.length)
-else
-  $opts_arr, $task_arr = ARGV, []
-end
+  #treat first argument not starting with a hyphen as the begining of the task
+  first_cmd = ARGV.index{ |arg| !arg.start_with?('-') }
+  if first_cmd
+    $opts_arr, $task_arr = ARGV.slice(0, first_cmd), ARGV.slice(first_cmd, ARGV.length)
+  else
+    $opts_arr, $task_arr = ARGV, []
+  end
 
-if get_env_var('SLURM_PROCID', error = false).nil?
-  cancel_job("run this executable only as part of a Slurm job, using srun or mpiexec")
-end
+  if get_env_var('SLURM_PROCID', error = false).nil?
+    cancel_job("run this executable only as part of a Slurm job, using srun or mpiexec")
+  end
 
-if proc_id = get_env_var('PMI_RANK', error = false)
-  $running_mode = :intel_mpi
-  num_procs = get_env_var('PMI_SIZE').to_i
-elsif proc_id = get_env_var('OMPI_COMM_WORLD_RANK', error = false)
-  $running_mode = :open_mpi
-  num_procs = get_env_var('OMPI_COMM_WORLD_SIZE').to_i
-#NOTE: check presence of a step ID to ensure execution is within srun
-#   not only sbatch
-elsif get_env_var('SLURM_STEP_ID', error = false)
-  proc_id = get_env_var('SLURM_PROCID', error = false)
-  $running_mode = :srun
-  num_procs = get_env_var('SLURM_NTASKS').to_i
-else
-  cancel_job("run this executable only as part of a Slurm job, using srun or mpiexec")
-end
-proc_id = proc_id.to_i
+  if proc_id = get_env_var('PMI_RANK', error = false)
+    $running_mode = :intel_mpi
+    num_procs = get_env_var('PMI_SIZE').to_i
+  elsif proc_id = get_env_var('OMPI_COMM_WORLD_RANK', error = false)
+    $running_mode = :open_mpi
+    num_procs = get_env_var('OMPI_COMM_WORLD_SIZE').to_i
+  #NOTE: check presence of a step ID to ensure execution is within srun
+  #   not only sbatch
+  elsif get_env_var('SLURM_STEP_ID', error = false)
+    proc_id = get_env_var('SLURM_PROCID', error = false)
+    $running_mode = :srun
+    num_procs = get_env_var('SLURM_NTASKS').to_i
+  else
+    cancel_job("run this executable only as part of a Slurm job, using srun or mpiexec")
+  end
+  proc_id = proc_id.to_i
 
-if find_option('help')
+  if find_option('help')
+    if proc_id == 0
+      puts HELP_STR
+    end
+    exit 0
+  end
+
+  job_id = get_job_id
+  job_directory = get_job_directory(job_id)
+  step_id = get_step_id(job_directory, error = true)
+  out_directory = File.join(job_directory, step_id.to_s)
+
+  if $task_arr.empty?
+    cancel_job("no task provided - aborting", job_id, step_id, proc_id)
+  end
+
+  node = get_from_shell_cmd('hostname', proc_id)
+  #NOTE: this value is retreived from the system as there are slurm configuration
+  #   options that obfuscate the true properties of nodes to slurm processes.
+  #   This obfuscation would confuse the data conclusions.
+  num_cores = get_from_shell_cmd('nproc --all', proc_id).to_i
+  #NOTE: in slurm vocab, 'CPUS' usually (& in this case) actually refers to cores
+  cpus_per_task = (get_env_var('SLURM_CPUS_PER_TASK', error = false) || 1).to_i
+
   if proc_id == 0
-    puts HELP_STR
+    create_directory(out_directory, proc_id)
+    step_info_path = File.join(out_directory, "step_info")
+    step_info = { job_id: job_id,
+                 step_id: step_id,
+                 task: $task_arr.join(' '),
+                 parallel_cmd: $running_mode.to_s,
+                 num_procs: num_procs,
+               }
+    yaml_step_info = step_info.to_yaml
+    File.open(step_info_path, 'w') { |f| f.write(yaml_step_info) }
   end
-  exit 0
-end
 
-job_id = get_job_id
-job_directory = get_job_directory(job_id)
-step_id = get_step_id(job_directory, error = true)
-out_directory = File.join(job_directory, step_id.to_s)
+  zones = get_zone_info
 
-if $task_arr.empty?
-  cancel_job("no task provided - aborting", job_id, step_id, proc_id)
-end
+  read_energy(zones, :starting_energy)
+  Open3.popen2e($task_arr.join(' ')) do |stdin, stdout_and_stderr, wait_thr|
+    while line = stdout_and_stderr.gets do
+      puts line
+    end
+    unless wait_thr.value.success?
+      cancel_job("task #{$task_arr.join(' ')} failed", proc_id)
+    end
+  end
+  read_energy(zones, :finishing_energy)
 
-node = get_from_shell_cmd('hostname', proc_id)
-#NOTE: this value is retreived from the system as there are slurm configuration
-#   options that obfuscate the true properties of nodes to slurm processes.
-#   This obfuscation would confuse the data conclusions.
-num_cores = get_from_shell_cmd('nproc --all', proc_id).to_i
-#NOTE: in slurm vocab, 'CPUS' usually (& in this case) actually refers to cores
-cpus_per_task = (get_env_var('SLURM_CPUS_PER_TASK', error = false) || 1).to_i
-
-if proc_id == 0
-  create_directory(out_directory, proc_id)
-  step_info_path = File.join(out_directory, "step_info")
-  step_info = { job_id: job_id,
+  proc_data = {node: node,
+               num_cores: num_cores,
+               job_id: job_id,
                step_id: step_id,
-               task: $task_arr.join(' '),
-               parallel_cmd: $running_mode.to_s,
-               num_procs: num_procs,
-             }
-  yaml_step_info = step_info.to_yaml
-  File.open(step_info_path, 'w') { |f| f.write(yaml_step_info) }
-end
+               proc_id: proc_id,
+               cpus_per_task: cpus_per_task,
+               zones: zones}
 
-zones = get_zone_info
+  out_file_path = File.join(out_directory, proc_id.to_s)
+  yaml_proc_data = proc_data.to_yaml
+  File.open(out_file_path, 'w') { |f| f.write(yaml_proc_data) }
 
-read_energy(zones, :starting_energy)
-Open3.popen2e($task_arr.join(' ')) do |stdin, stdout_and_stderr, wait_thr|
-  while line = stdout_and_stderr.gets do
-    puts line
-  end
-  unless wait_thr.value.success?
-    cancel_job("task #{$task_arr.join(' ')} failed", proc_id)
-  end
-end
-read_energy(zones, :finishing_energy)
-
-proc_data = {node: node,
-             num_cores: num_cores,
-             job_id: job_id,
-             step_id: step_id,
-             proc_id: proc_id,
-             cpus_per_task: cpus_per_task,
-             zones: zones}
-
-out_file_path = File.join(out_directory, proc_id.to_s)
-yaml_proc_data = proc_data.to_yaml
-File.open(out_file_path, 'w') { |f| f.write(yaml_proc_data) }
-
-if proc_id == 0
-  t1 = Time.now
-  time_limit = find_option(/t|timeout/)
-  time_limit = DEFAULTS[:timeout] if time_limit.nil? or time_limit == true
-  while true
-    process_files = Dir.entries(out_directory).select do |file|
-      file.to_i.to_s == file
-    end
-    if process_files.length == num_procs
-      break
-    elsif Time.now - t1 > time_limit.to_i
-      message = "timeout waiting for processes to complete"
-      cancel_job(message, job_id, step_id, proc_id)
-    end
-    sleep 1
-  end
-  per_node_data = {total: 0, units: 'Joules'}
-  Dir.glob(File.join(out_directory, '*')).each do |file|
-    #only process files with a proc id as a name
-    next unless File.basename(file).to_i.to_s == File.basename(file)
-    proc_data = YAML.load_file(file)
-    node_ = proc_data[:node]
-    node_proportion = (1.0/proc_data[:num_cores])*proc_data[:cpus_per_task]
-
-    #NOTE Time.at((2**31)-1) gives the maximum possible time value
-    #     so all others will be lesser
-    per_node_data[node_] ||= {start_time: Time.at(max_time = (2**31)-1),
-                              finish_time: Time.at(0)
-                             }
-    per_node_data[node_][:num_cores] = proc_data[:num_cores]
-    per_node_data[node_][:num_procs] ||= 0
-    per_node_data[node_][:num_procs] += 1
-    per_node_data[node_][:cores_used] ||= 0
-    per_node_data[node_][:cores_used] += proc_data[:cpus_per_task]
-    per_node_data[node_][:zones] ||= {}
-
-    proc_data[:zones].each do |zone|
-      zone_name_ = zone[:name].join('-->')
-      change = (zone[:finishing_energy][:energy]-zone[:starting_energy][:energy])
-      change = change.to_f / 1000000 if zone[:unit] = 'uj'
-      process_change = change*node_proportion
-      process_change = process_change.round(7)
-      per_node_data[node_][:zones][zone_name_] ||= 0
-      per_node_data[node_][:zones][zone_name_] += process_change
-      per_node_data[node_][:node_total] ||= 0
-      per_node_data[node_][:node_total] += process_change
-
-      if per_node_data[node_][:start_time] > zone[:starting_energy][:time]
-        per_node_data[node_][:start_time] = zone[:starting_energy][:time]
+  if proc_id == 0
+    t1 = Time.now
+    time_limit = find_option(/t|timeout/)
+    time_limit = DEFAULTS[:timeout] if time_limit.nil? or time_limit == true
+    while true
+      process_files = Dir.entries(out_directory).select do |file|
+        file.to_i.to_s == file
       end
-      if per_node_data[node_][:finish_time] < zone[:finishing_energy][:time]
-        per_node_data[node_][:finish_time] = zone[:finishing_energy][:time]
+      if process_files.length == num_procs
+        break
+      elsif Time.now - t1 > time_limit.to_i
+        message = "timeout waiting for processes to complete"
+        cancel_job(message, job_id, step_id, proc_id)
       end
-      per_node_data[:total] += process_change
+      sleep 1
     end
+    per_node_data = {total: 0, units: 'Joules'}
+    Dir.glob(File.join(out_directory, '*')).each do |file|
+      #only process files with a proc id as a name
+      next unless File.basename(file).to_i.to_s == File.basename(file)
+      proc_data = YAML.load_file(file)
+      node_ = proc_data[:node]
+      node_proportion = (1.0/proc_data[:num_cores])*proc_data[:cpus_per_task]
+
+      #NOTE Time.at((2**31)-1) gives the maximum possible time value
+      #     so all others will be lesser
+      per_node_data[node_] ||= {start_time: Time.at(max_time = (2**31)-1),
+                                finish_time: Time.at(0)
+                               }
+      per_node_data[node_][:num_cores] = proc_data[:num_cores]
+      per_node_data[node_][:num_procs] ||= 0
+      per_node_data[node_][:num_procs] += 1
+      per_node_data[node_][:cores_used] ||= 0
+      per_node_data[node_][:cores_used] += proc_data[:cpus_per_task]
+      per_node_data[node_][:zones] ||= {}
+
+      proc_data[:zones].each do |zone|
+        zone_name_ = zone[:name].join('-->')
+        change = (zone[:finishing_energy][:energy]-zone[:starting_energy][:energy])
+        change = change.to_f / 1000000 if zone[:unit] = 'uj'
+        process_change = change*node_proportion
+        process_change = process_change.round(7)
+        per_node_data[node_][:zones][zone_name_] ||= 0
+        per_node_data[node_][:zones][zone_name_] += process_change
+        per_node_data[node_][:node_total] ||= 0
+        per_node_data[node_][:node_total] += process_change
+
+        if per_node_data[node_][:start_time] > zone[:starting_energy][:time]
+          per_node_data[node_][:start_time] = zone[:starting_energy][:time]
+        end
+        if per_node_data[node_][:finish_time] < zone[:finishing_energy][:time]
+          per_node_data[node_][:finish_time] = zone[:finishing_energy][:time]
+        end
+        per_node_data[:total] += process_change
+      end
+    end
+    per_node_data[:step_info] = step_info
+    yaml_per_node_data = per_node_data.to_yaml
+    totals_out_file_path = File.join(out_directory, "totalled_data")
+    File.open(totals_out_file_path, 'w') { |f| f.write(yaml_per_node_data) }
   end
-  per_node_data[:step_info] = step_info
-  yaml_per_node_data = per_node_data.to_yaml
-  totals_out_file_path = File.join(out_directory, "totalled_data")
-  File.open(totals_out_file_path, 'w') { |f| f.write(yaml_per_node_data) }
+rescue => e
+  raise e if e.is_a?(EnergyRecordError)
+  step_id ||= nil
+  scancel(job_id, step_id) if job_id
+  raise e
 end
