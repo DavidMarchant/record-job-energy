@@ -1,9 +1,9 @@
 #!/usr/bin/env ruby
 
-require 'open3'
-require 'yaml'
 require 'fileutils'
+require 'open3'
 require 'rubygems'
+require 'yaml'
 
 EnergyRecordError = Class.new(RuntimeError)
 
@@ -11,6 +11,22 @@ POWERCAP_ROOT_DIR = '/sys/devices/virtual/powercap'
 DEFAULTS = {out_directory: File.join(__dir__, 'record-job-energy-data'),
             timeout: 600,
            }
+HELP_STR = <<-help_str
+RECORD-JOB-ENERGY HELP
+  This script should be executed as:
+      PARALLEL_CMD [PARALLEL_CMD_OPTS] exec.rb [OPTS] PARALLEL_TASK [PARALLEL_TASK_OPTS]
+    Where PARALLEL_CMD is srun.
+  Options for this script include:
+    [-d,--directory]=DIR
+      Sets the desired output directory to DIR. Default is:
+        #{DEFAULTS[:out_directory]}
+    [-t,--timeout]=TIMEOUT
+      Sets the maximum time the root process will wait for the other processes to complete
+      execution, after the root process has finished its execution. Value is in seconds,
+      default value is #{DEFAULTS[:timeout]}.
+    --help
+      Display this message and exit
+help_str
 
 def get_env_var(var, error = true)
   if ENV[var]
@@ -25,8 +41,8 @@ def get_env_var(var, error = true)
 end
 
 def get_job_id(error = true)
-  job_id = get_env_var('SLURM_JOB_ID', error_=false)
-  job_id = get_env_var('SLURM_JOBID', error_=error) unless job_id
+  job_id = get_env_var('SLURM_JOB_ID', error_ = false)
+  job_id = get_env_var('SLURM_JOBID', error_ = error) unless job_id
   job_id.to_i
 end
 
@@ -148,22 +164,7 @@ proc_id = proc_id.to_i
 
 if find_option(opts_arr, 'help')
   if proc_id == 0
-    puts <<-help_str
-RECORD-JOB-ENERGY HELP
-  This script should be executed as:
-      PARALLEL_CMD [PARALLEL_CMD_OPTS] exec.rb [OPTS] PARALLEL_TASK [PARALLEL_TASK_OPTS]
-    Where PARALLEL_CMD is srun.
-  Options for this script include:
-    [-d,--directory]=DIR
-      Sets the desired output directory to DIR. Default is:
-        #{DEFAULTS[:out_directory]}
-    [-t,--timeout]=TIMEOUT
-      Sets the maximum time the root process will wait for the other processes to complete
-      execution, after the root process has finished its execution. Value is in seconds,
-      default value is #{DEFAULTS[:timeout]}.
-    --help
-      Display this message and exit
-    help_str
+    puts HELP_STR
   end
   exit 0
 end
@@ -236,7 +237,7 @@ File.open(out_file_path, 'w') { |f| f.write(yaml_proc_data) }
 if proc_id == 0
   t1 = Time.now
   time_limit = find_option(opts_arr, /t|timeout/)
-  time_limit = 600 if time_limit.nil? or time_limit == true
+  time_limit = DEFAULTS[:timeout] if time_limit.nil? or time_limit == true
   while true
     process_files = Dir.entries(out_directory).select do |file|
       file.to_i.to_s == file
