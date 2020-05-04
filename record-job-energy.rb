@@ -189,8 +189,6 @@ top_directory = find_option(/d|directory/) || DEFAULTS[:out_directory]
 job_directory = File.join(top_directory, job_id.to_s)
 step_id = get_step_id(job_directory, error = true)
 out_directory = File.join(job_directory, step_id.to_s)
-out_file_path = File.join(out_directory, proc_id.to_s)
-
 
 cancel_job("no task provided - aborting", proc_id) if $task_arr.empty?
 
@@ -203,8 +201,8 @@ num_cores = get_from_shell_cmd('nproc --all', proc_id).to_i
 cpus_per_task = (get_env_var('SLURM_CPUS_PER_TASK', error = false) || 1).to_i
 
 if proc_id == 0
-  step_info_path = File.join(out_directory, "step_info")
   create_directory(out_directory, proc_id)
+  step_info_path = File.join(out_directory, "step_info")
   step_info = { job_id: job_id,
                step_id: step_id,
                task: $task_arr.join(' '),
@@ -236,6 +234,7 @@ proc_data = {node: node,
              cpus_per_task: cpus_per_task,
              zones: zones}
 
+out_file_path = File.join(out_directory, proc_id.to_s)
 yaml_proc_data = proc_data.to_yaml
 File.open(out_file_path, 'w') { |f| f.write(yaml_proc_data) }
 
