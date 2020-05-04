@@ -46,6 +46,21 @@ def get_job_id(error = true)
   job_id.to_i
 end
 
+def get_step_id(job_directory, error = true)
+  unless step_id = get_env_var('SLURM_STEP_ID', error = false)
+    #NOTE: known issue where, under OpenMPI, the root process of mpiexec will not
+    #   receive some environment variables that others will. In this case the
+    #   value of the step must be discerned from the size of the job's directory
+    if running_mode == :open_mpi
+      #NOTE: -2 because '.' and '..' are present in all directories
+      step_id = Dir.exist?(job_directory) ? Dir.entries(job_directory).length-2 : 0
+    else
+      step_id = get_env_var('SLURM_STEP_ID', error_ = error)
+    end
+  end
+  step_id.to_i
+end
+
 def cancel_job(message = nil, proc_id = nil)
   job_id = get_job_id(error = false)
   Open3.capture3("scancel #{job_id}") if job_id
@@ -169,9 +184,16 @@ if find_option(opts_arr, 'help')
   exit 0
 end
 
+job_id = get_job_id
+top_directory = find_option(opts_arr, /d|directory/) || DEFAULTS[:out_directory]
+job_directory = File.join(top_directory, job_id.to_s)
+step_id = get_step_id(job_directory, error = true)
+out_directory = File.join(job_directory, step_id.to_s)
+out_file_path = File.join(out_directory, proc_id.to_s)
+
+
 cancel_job("no task provided - aborting", proc_id) if task_arr.empty?
 
-job_id = get_job_id
 node = get_from_shell_cmd('hostname', proc_id)
 #NOTE: this value is retreived from the system as there are slurm configuration
 #   options that obfuscate the true properties of nodes to slurm processes.
@@ -180,25 +202,8 @@ num_cores = get_from_shell_cmd('nproc --all', proc_id).to_i
 #NOTE: in slurm vocab, 'CPUS' usually (& in this case) actually refers to cores
 cpus_per_task = (get_env_var('SLURM_CPUS_PER_TASK', error = false) || 1).to_i
 
-top_directory = find_option(opts_arr, /d|directory/) || DEFAULTS[:out_directory]
-job_directory = File.join(top_directory, job_id.to_s)
-unless step_id = get_env_var('SLURM_STEP_ID', error = false)
-  #NOTE: known issue where, under OpenMPI, the root process of mpiexec will not
-  #   receive some environment variables that others will. In this case the
-  #   value of the step must be discerned from the size of the job's directory
-  if running_mode == :open_mpi
-    #NOTE: -2 because '.' and '..' are present in all directories
-    step_id = Dir.exist?(job_directory) ? Dir.entries(job_directory).length-2 : 0
-  else
-    step_id = get_env_var('SLURM_STEP_ID', error = true)
-  end
-end
-step_id = step_id.to_i
-out_directory = File.join(job_directory, step_id.to_s)
-step_info_path = File.join(out_directory, "step_info")
-out_file_path = File.join(out_directory, proc_id.to_s)
-
 if proc_id == 0
+  step_info_path = File.join(out_directory, "step_info")
   create_directory(out_directory, proc_id)
   step_info = { job_id: job_id,
                step_id: step_id,
