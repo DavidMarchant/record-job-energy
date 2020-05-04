@@ -51,7 +51,7 @@ def get_step_id(job_directory, error = true)
     #NOTE: known issue where, under OpenMPI, the root process of mpiexec will not
     #   receive some environment variables that others will. In this case the
     #   value of the step must be discerned from the size of the job's directory
-    if running_mode == :open_mpi
+    if $running_mode == :open_mpi
       #NOTE: -2 because '.' and '..' are present in all directories
       step_id = Dir.exist?(job_directory) ? Dir.entries(job_directory).length-2 : 0
     else
@@ -161,16 +161,16 @@ if get_env_var('SLURM_PROCID', error = false).nil?
 end
 
 if proc_id = get_env_var('PMI_RANK', error = false)
-  running_mode = :intel_mpi
+  $running_mode = :intel_mpi
   num_procs = get_env_var('PMI_SIZE').to_i
 elsif proc_id = get_env_var('OMPI_COMM_WORLD_RANK', error = false)
-  running_mode = :open_mpi
+  $running_mode = :open_mpi
   num_procs = get_env_var('OMPI_COMM_WORLD_SIZE').to_i
 #NOTE: check presence of a step ID to ensure execution is within srun
 #   not only sbatch
 elsif get_env_var('SLURM_STEP_ID', error = false)
   proc_id = get_env_var('SLURM_PROCID', error = false)
-  running_mode = :srun
+  $running_mode = :srun
   num_procs = get_env_var('SLURM_NTASKS').to_i
 else
   cancel_job("run this executable only as part of a Slurm job, using srun or mpiexec")
@@ -206,7 +206,7 @@ if proc_id == 0
   step_info = { job_id: job_id,
                step_id: step_id,
                task: $task_arr.join(' '),
-               parallel_cmd: running_mode.to_s,
+               parallel_cmd: $running_mode.to_s,
                num_procs: num_procs,
              }
   yaml_step_info = step_info.to_yaml
