@@ -61,15 +61,33 @@ def get_step_id(job_directory, error = true)
   step_id.to_i
 end
 
-def cancel_job(message = nil, proc_id = nil)
-  job_id = get_job_id(error = false)
-  Open3.capture3("scancel #{job_id}") if job_id
-  message = if message and proc_id
+def get_job_directory(job_id)
+  top_directory = find_option(/d|directory/) || DEFAULTS[:out_directory]
+  return File.join(top_directory, job_id.to_s)
+end
+
+#Cancel the slurm job
+#Can be passed a job_id and/or a step_id, will try retrieve them if not
+#If found will cancel the Slurm job and raise an error
+# if not will just raise an error
+def cancel_job(message, job_id = nil, step_id = nil, proc_id = nil)
+  job_id = get_job_id(error = false) unless job_id
+  if job_id and not step_id
+    step_id = get_step_id(get_job_directory(job_id), error = false)
+  end
+  scancel(job_id, step_id) if job_id
+  message = if proc_id
               "Record Job Energy error in process #{proc_id} - #{message}"
-            elsif message
+            else
               "Record Job Energy error - #{message}"
             end
   raise EnergyRecordError, message
+end
+
+def scancel(job_id, step_id = nil)
+  target = job_id.to_s
+  target += ".#{step_id.to_s}" if step_id
+  Open3.capture2e("scancel #{target}")
 end
 
 def get_from_shell_cmd(cmd, proc_id)
@@ -185,12 +203,13 @@ if find_option('help')
 end
 
 job_id = get_job_id
-top_directory = find_option(/d|directory/) || DEFAULTS[:out_directory]
-job_directory = File.join(top_directory, job_id.to_s)
+job_directory = get_job_directory(job_id)
 step_id = get_step_id(job_directory, error = true)
 out_directory = File.join(job_directory, step_id.to_s)
 
-cancel_job("no task provided - aborting", proc_id) if $task_arr.empty?
+if $task_arr.empty?
+  cancel_job("no task provided - aborting", job_id, step_id, proc_id)
+end
 
 node = get_from_shell_cmd('hostname', proc_id)
 #NOTE: this value is retreived from the system as there are slurm configuration
@@ -249,7 +268,8 @@ if proc_id == 0
     if process_files.length == num_procs
       break
     elsif Time.now - t1 > time_limit.to_i
-      cancel_job("timeout waiting for processes to complete", proc_id)
+      message = "timeout waiting for processes to complete"
+      cancel_job(message, job_id, step_id, proc_id)
     end
     sleep 1
   end
