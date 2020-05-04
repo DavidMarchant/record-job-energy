@@ -30,6 +30,63 @@ RECORD-JOB-ENERGY HELP
       Display this message and exit
 help_str
 
+# Cancel the Slurm job
+# Can be passed a job_id and/or a step_id, will try retrieve them if not
+# If found will cancel the Slurm job and raise an error
+# if not will just raise an error
+def cancel_job(message, job_id = nil, step_id = nil, proc_id = nil)
+  job_id = get_job_id(error = false) unless job_id
+  if job_id and not step_id
+    step_id = get_step_id(get_job_directory(job_id), error = false)
+  end
+  scancel(job_id, step_id) if job_id
+  message = if proc_id
+              "Record Job Energy error in process #{proc_id} - #{message}"
+            else
+              "Record Job Energy error - #{message}"
+            end
+  raise EnergyRecordError, message
+end
+
+# Directory creating utility method
+def create_directory(directory, proc_id)
+  begin
+    FileUtils.mkdir_p(directory) unless Dir.exists?(directory)
+  rescue SystemCallError
+    cancel_job("Error while creating directory #{directory} - aborting", proc_id)
+  end
+end
+
+# Look for an option in the script's options
+# Looks for the provided option 'target_opt', return its value if it's in
+#   key-value format else returning true if found or nil if not
+# Only the first match is considered, prioritising those with values
+def find_option(target_opt)
+  match_data = nil
+  if $opts_arr.find { |opt| match_data = opt.match(/^--?#{target_opt}=(\S+)$/) }
+    return match_data[1]
+  elsif $opts_arr.find { |opt| opt =~ /^--?#{target_opt}$/ }
+    return true
+  else
+    return nil
+  end
+end
+
+# Retrieve the name of a powercap zone from its directory by recursively adding
+#   the names of its parents
+def find_zone_name(dir)
+  cur_dir = dir
+  name_arr = []
+  while File.dirname(cur_dir) != POWERCAP_ROOT_DIR do
+    name_file = File.join(cur_dir, 'name')
+    if File.file?(name_file)
+      name_arr.unshift(read_first_line(name_file))
+    end
+    cur_dir = File.dirname(cur_dir)
+  end
+  name_arr.unshift(File.basename(cur_dir))
+end
+
 # Retrieve the specified environment variable
 # Optionally, will error if not found
 def get_env_var(var, error = true)
@@ -42,6 +99,21 @@ def get_env_var(var, error = true)
       return nil
     end
   end
+end
+
+# Execute a system-call to retrieve its stdout
+def get_from_shell_cmd(cmd, proc_id)
+  stdout, stderr, status = Open3.capture3(cmd)
+  if not status.success?
+    cancel_job("error executing command '#{cmd}' - #{stderr}", proc_id)
+  end
+  return stdout.strip!
+end
+
+# Retrieve the output directory for the job
+def get_job_directory(job_id)
+  top_directory = find_option(/d|directory/) || DEFAULTS[:out_directory]
+  return File.join(top_directory, job_id.to_s)
 end
 
 # Retrieve the Slurm job's ID. 2 different keys for backwards compatibility
@@ -66,82 +138,6 @@ def get_step_id(job_directory, error = true)
     end
   end
   step_id.to_i
-end
-
-# Retrieve the output directory for the job
-def get_job_directory(job_id)
-  top_directory = find_option(/d|directory/) || DEFAULTS[:out_directory]
-  return File.join(top_directory, job_id.to_s)
-end
-
-# Cancel the Slurm job
-# Can be passed a job_id and/or a step_id, will try retrieve them if not
-# If found will cancel the Slurm job and raise an error
-# if not will just raise an error
-def cancel_job(message, job_id = nil, step_id = nil, proc_id = nil)
-  job_id = get_job_id(error = false) unless job_id
-  if job_id and not step_id
-    step_id = get_step_id(get_job_directory(job_id), error = false)
-  end
-  scancel(job_id, step_id) if job_id
-  message = if proc_id
-              "Record Job Energy error in process #{proc_id} - #{message}"
-            else
-              "Record Job Energy error - #{message}"
-            end
-  raise EnergyRecordError, message
-end
-
-# System-call 'scancel', Slurm's job cancelling command
-def scancel(job_id, step_id = nil)
-  target = job_id.to_s
-  target += ".#{step_id.to_s}" if step_id
-  Open3.capture2e("scancel #{target}")
-end
-
-# Execute a system-call to retrieve its stdout
-def get_from_shell_cmd(cmd, proc_id)
-  stdout, stderr, status = Open3.capture3(cmd)
-  if not status.success?
-    cancel_job("error executing command '#{cmd}' - #{stderr}", proc_id)
-  end
-  return stdout.strip!
-end
-
-# Look for an option in the script's options
-# Looks for the provided option 'target_opt', return its value if it's in
-#   key-value format else returning true if found or nil if not
-# Only the first match is considered, prioritising those with values
-def find_option(target_opt)
-  match_data = nil
-  if $opts_arr.find { |opt| match_data = opt.match(/^--?#{target_opt}=(\S+)$/) }
-    return match_data[1]
-  elsif $opts_arr.find { |opt| opt =~ /^--?#{target_opt}$/ }
-    return true
-  else
-    return nil
-  end
-end
-
-# System call to retrieve the first line of a file without loading it into
-#   memory
-def read_first_line(file)
-  `head -n 1 #{file}`.strip
-end
-
-# Retrieve the name of a powercap zone from its directory by recursively adding
-#   the names of its parents
-def find_zone_name(dir)
-  cur_dir = dir
-  name_arr = []
-  while File.dirname(cur_dir) != POWERCAP_ROOT_DIR do
-    name_file = File.join(cur_dir, 'name')
-    if File.file?(name_file)
-      name_arr.unshift(read_first_line(name_file))
-    end
-    cur_dir = File.dirname(cur_dir)
-  end
-  name_arr.unshift(File.basename(cur_dir))
 end
 
 # Retrieve a list of hashes containing info on each of the node's powercap zones
@@ -170,13 +166,17 @@ def read_energy(zones, tag)
   zones
 end
 
-# Directory creating utility method
-def create_directory(directory, proc_id)
-  begin
-    FileUtils.mkdir_p(directory) unless Dir.exists?(directory)
-  rescue SystemCallError
-    cancel_job("Error while creating directory #{directory} - aborting", proc_id)
-  end
+# System call to retrieve the first line of a file without loading it into
+#   memory
+def read_first_line(file)
+  `head -n 1 #{file}`.strip
+end
+
+# System-call 'scancel', Slurm's job cancelling command
+def scancel(job_id, step_id = nil)
+  target = job_id.to_s
+  target += ".#{step_id.to_s}" if step_id
+  Open3.capture2e("scancel #{target}")
 end
 
 begin
