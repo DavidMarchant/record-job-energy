@@ -184,12 +184,21 @@ begin
     STDERR.puts "Record Job Energy WARNING - using Ruby version #{RUBY_VERSION}, recommended is 2.0.0 or later"
   end
 
-  # Treat first argument not starting with a hyphen as the beginning of the task
-  first_cmd = ARGV.index{ |arg| !arg.start_with?('-') }
-  if first_cmd
-    $opts_arr, $task_arr = ARGV.slice(0, first_cmd), ARGV.slice(first_cmd, ARGV.length)
-  else
-    $opts_arr, $task_arr = ARGV, []
+  # Split arguments into options for the script and the task to be executed
+  $opts_arr, $task_arr = [], []
+  iter = (0...ARGV.length).to_enum
+  while true
+    i = iter.next
+    if ARGV[i].start_with?('-') and ARGV[i+1] == '=' and not ARGV[i+2].start_with?('-')
+      $opts_arr << ARGV[i..i+2].join()
+      2.times {i = iter.next}
+    elsif ARGV[i].start_with?('-')
+      $opts_arr << ARGV[i]
+    else
+      $task_arr = ARGV[i...ARGV.length]
+      break
+    end
+    break if i+1 >= ARGV.length
   end
 
   if get_env_var('SLURM_PROCID', error = false).nil?
