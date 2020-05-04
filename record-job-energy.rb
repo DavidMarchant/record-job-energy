@@ -83,11 +83,11 @@ end
 #looks for the provided option 'target_opt', return its value if it's in
 #   key-value format else returning true if found or nil if not
 #only the first match is considered, prioritising those with values
-def find_option(opts_arr, target_opt)
+def find_option(target_opt)
   match_data = nil
-  if opts_arr.find { |opt| match_data = opt.match(/^--?#{target_opt}=(\S+)$/) }
+  if $opts_arr.find { |opt| match_data = opt.match(/^--?#{target_opt}=(\S+)$/) }
     return match_data[1]
-  elsif opts_arr.find { |opt| opt =~ /^--?#{target_opt}$/ }
+  elsif $opts_arr.find { |opt| opt =~ /^--?#{target_opt}$/ }
     return true
   else
     return nil
@@ -151,9 +151,9 @@ end
 #treat first argument not starting with a hyphen as the begining of the task
 first_cmd = ARGV.index{ |arg| !arg.start_with?('-') }
 if first_cmd
-  opts_arr, task_arr = ARGV.slice(0, first_cmd), ARGV.slice(first_cmd, ARGV.length)
+  $opts_arr, $task_arr = ARGV.slice(0, first_cmd), ARGV.slice(first_cmd, ARGV.length)
 else
-  opts_arr, task_arr = ARGV, []
+  $opts_arr, $task_arr = ARGV, []
 end
 
 if get_env_var('SLURM_PROCID', error = false).nil?
@@ -177,7 +177,7 @@ else
 end
 proc_id = proc_id.to_i
 
-if find_option(opts_arr, 'help')
+if find_option('help')
   if proc_id == 0
     puts HELP_STR
   end
@@ -185,14 +185,14 @@ if find_option(opts_arr, 'help')
 end
 
 job_id = get_job_id
-top_directory = find_option(opts_arr, /d|directory/) || DEFAULTS[:out_directory]
+top_directory = find_option(/d|directory/) || DEFAULTS[:out_directory]
 job_directory = File.join(top_directory, job_id.to_s)
 step_id = get_step_id(job_directory, error = true)
 out_directory = File.join(job_directory, step_id.to_s)
 out_file_path = File.join(out_directory, proc_id.to_s)
 
 
-cancel_job("no task provided - aborting", proc_id) if task_arr.empty?
+cancel_job("no task provided - aborting", proc_id) if $task_arr.empty?
 
 node = get_from_shell_cmd('hostname', proc_id)
 #NOTE: this value is retreived from the system as there are slurm configuration
@@ -207,7 +207,7 @@ if proc_id == 0
   create_directory(out_directory, proc_id)
   step_info = { job_id: job_id,
                step_id: step_id,
-               task: task_arr.join(' '),
+               task: $task_arr.join(' '),
                parallel_cmd: running_mode.to_s,
                num_procs: num_procs,
              }
@@ -218,12 +218,12 @@ end
 zones = get_zone_info
 
 read_energy(zones, :starting_energy)
-Open3.popen2e(task_arr.join(' ')) do |stdin, stdout_and_stderr, wait_thr|
+Open3.popen2e($task_arr.join(' ')) do |stdin, stdout_and_stderr, wait_thr|
   while line = stdout_and_stderr.gets do
     puts line
   end
   unless wait_thr.value.success?
-    cancel_job("task #{task_arr.join(' ')} failed", proc_id)
+    cancel_job("task #{$task_arr.join(' ')} failed", proc_id)
   end
 end
 read_energy(zones, :finishing_energy)
@@ -241,7 +241,7 @@ File.open(out_file_path, 'w') { |f| f.write(yaml_proc_data) }
 
 if proc_id == 0
   t1 = Time.now
-  time_limit = find_option(opts_arr, /t|timeout/)
+  time_limit = find_option(/t|timeout/)
   time_limit = DEFAULTS[:timeout] if time_limit.nil? or time_limit == true
   while true
     process_files = Dir.entries(out_directory).select do |file|
