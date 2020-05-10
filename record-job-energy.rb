@@ -29,6 +29,7 @@ RECORD-JOB-ENERGY HELP
     --help
       Display this message and exit
 help_str
+TOTAL_FILE_NAME = "totalled_data"
 
 # Cancel the Slurm job
 # Can be passed a job_id and/or a step_id, will try retrieve them if not
@@ -132,10 +133,16 @@ def get_step_id(job_directory, error = true)
   unless step_id = get_env_var('SLURM_STEP_ID', error = false)
     #NOTE: known issue where, under OpenMPI, the root process of mpiexec will not
     #   receive some environment variables that others will. In this case the
-    #   value of the step must be discerned from the size of the job's directory
+    #   value of the step must be discerned by the directories of previous steps
     if $running_mode and $running_mode == :open_mpi
-      #NOTE: -2 because '.' and '..' are present in all directories
-      step_id = Dir.exist?(job_directory) ? Dir.entries(job_directory).length-2 : 0
+      if Dir.exist?(job_directory)
+        completed_steps = Dir.entries(job_directory).select do |f|
+          f.to_i.to_s == f and File.exist?(File.join(job_directory, f, TOTAL_FILE_NAME))
+        end
+        step_id = completed_steps.length
+      else
+        step_id = 0
+      end
     else
       step_id = get_env_var('SLURM_STEP_ID', error_ = error)
     end
@@ -350,7 +357,7 @@ begin
     end
     per_node_data[:step_info] = step_info
     yaml_per_node_data = per_node_data.to_yaml
-    totals_out_file_path = File.join(out_directory, "totalled_data")
+    totals_out_file_path = File.join(out_directory, TOTAL_FILE_NAME)
     File.open(totals_out_file_path, 'w') { |f| f.write(yaml_per_node_data) }
   end
 # Rescue any StandardError during execution with a call to cancel the Slurm job.
