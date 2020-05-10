@@ -29,6 +29,7 @@ RECORD-JOB-ENERGY HELP
     --help
       Display this message and exit
 help_str
+ENERGY_FILE_NAME = 'energy_uj'
 TOTAL_FILE_NAME = "totalled_data"
 
 # Cancel the Slurm job
@@ -150,6 +151,16 @@ def get_step_id(job_directory, error = true)
   step_id.to_i
 end
 
+# Take an energy reading for each powercap zone, takes as input the output of
+#   get_zone_info. Labels readings with 'tag'
+def get_zone_energies(zones, tag)
+  zones.each do |zone|
+    energy = read_energy(zone[:path])
+    zone[tag.to_sym] = {time: Time.now, energy: energy, unit: 'uj'}
+  end
+  zones
+end
+
 # Retrieve a list of hashes containing info on each of the node's powercap zones
 def get_zone_info
 	zone_dirs = Dir.glob(File.join(POWERCAP_ROOT_DIR, '**', '*energy_uj'))
@@ -166,14 +177,9 @@ def get_zone_info
 	zone_info
 end
 
-# Take an energy reading for each powercap zone, takes as input the output of
-#   get_zone_info. Labels readings with 'tag'
-def read_energy(zones, tag)
-  zones.each do |zone|
-    energy = read_first_line(File.join(zone[:path], 'energy_uj')).to_i
-    zone[tag.to_sym] = {time: Time.now, energy: energy, unit: 'uj'}
-  end
-  zones
+# Read the energy of a single power zone
+def read_energy(zone_path)
+  read_first_line(File.join(zone_path, ENERGY_FILE_NAME)).to_i
 end
 
 # System call to retrieve the first line of a file without loading it into
@@ -272,7 +278,7 @@ begin
 
   zones = get_zone_info
 
-  read_energy(zones, :starting_energy)
+  get_zone_energies(zones, :starting_energy)
   Open3.popen2e($task_arr.join(' ')) do |stdin, stdout_and_stderr, wait_thr|
     while line = stdout_and_stderr.gets do
       puts line
@@ -281,7 +287,7 @@ begin
       cancel_job("task #{$task_arr.join(' ')} failed", proc_id)
     end
   end
-  read_energy(zones, :finishing_energy)
+  get_zone_energies(zones, :finishing_energy)
 
   # Write this process's data to a file
   proc_data = {node: node,
