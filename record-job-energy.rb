@@ -88,15 +88,15 @@ def execute_task(zones)
     while line = stdout_and_stderr.gets do
       puts line
     end
+    unless wait_thr.value.success?
+      cancel_job("task #{$task_arr.join(' ')} failed", proc_id)
+    end
+    thr.kill
     # a final check for overflow between previous check & task completion
     zone_paths.each do |zp|
       if prev_energies[zp] > read_energy(zp)
         overflow_counts[zp] += 1
       end
-    end
-    thr.kill
-    unless wait_thr.value.success?
-      cancel_job("task #{$task_arr.join(' ')} failed", proc_id)
     end
   end
   overflow_counts
