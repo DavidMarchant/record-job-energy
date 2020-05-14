@@ -56,7 +56,8 @@ def create_directory(directory, proc_id)
   begin
     FileUtils.mkdir_p(directory) unless Dir.exists?(directory)
   rescue SystemCallError
-    cancel_job("Error while creating directory #{directory} - aborting", proc_id)
+    cancel_job("Error while creating directory #{directory} - aborting",
+               proc_id)
   end
 end
 
@@ -108,7 +109,7 @@ end
 # Only the first match is considered, prioritising those with values
 def find_option(target_opt)
   match_data = nil
-  if $opts_arr.find { |opt| match_data = opt.match(/^--?#{target_opt}=(\S+)$/) }
+  if $opts_arr.find{ |opt| match_data = opt.match(/^--?#{target_opt}=(\S+)$/) }
     return match_data[1]
   elsif $opts_arr.find { |opt| opt =~ /^--?#{target_opt}$/ }
     return true
@@ -181,7 +182,9 @@ def get_step_id(job_directory, error = true)
     if $running_mode and $running_mode == :open_mpi
       if Dir.exist?(job_directory)
         completed_steps = Dir.entries(job_directory).select do |f|
-          f.to_i.to_s == f and File.exist?(File.join(job_directory, f, TOTAL_FILE_NAME))
+          f.to_i.to_s == f and File.exist?(File.join(job_directory,
+                                                     f,
+                                                     TOTAL_FILE_NAME))
         end
         step_id = completed_steps.length
       else
@@ -240,7 +243,8 @@ end
 
 begin
   if Gem::Version.new(RUBY_VERSION) < Gem::Version.new('2.0.0')
-    STDERR.puts "Record Job Energy WARNING - using Ruby version #{RUBY_VERSION}, recommended is 2.0.0 or later"
+    STDERR.puts "Record Job Energy WARNING - using Ruby version #{RUBY_VERSION}," +
+                " recommended is 2.0.0 or later"
   end
 
   # Split arguments into options for the script and the task to be executed
@@ -248,7 +252,9 @@ begin
   iter = (0...ARGV.length).to_enum
   while true
     i = iter.next
-    if ARGV[i].start_with?('-') and ARGV[i+1] == '=' and not ARGV[i+2].start_with?('-')
+    if ARGV[i].start_with?('-') and
+        ARGV[i+1] == '=' and not
+        ARGV[i+2].start_with?('-')
       $opts_arr << ARGV[i..i+2].join()
       2.times {i = iter.next}
     elsif ARGV[i].start_with?('-')
@@ -261,7 +267,8 @@ begin
   end
 
   if get_env_var('SLURM_PROCID', error = false).nil?
-    cancel_job("run this executable only as part of a Slurm job, using srun or mpiexec")
+    message = "run this executable only as part of a Slurm job, using srun or mpiexec"
+    raise EnergyRecordError, message
   end
 
   if proc_id = get_env_var('PMI_RANK', error = false)
@@ -384,7 +391,9 @@ begin
 
       proc_data[:zones].each do |zone|
         zone_name_ = zone[:name].join('-->')
-        change = (zone[:finishing_energy][:energy]-zone[:starting_energy][:energy])
+        starting_energy = zone[:starting_energy][:energy]
+        finishing_energy = zone[:finishing_energy][:energy]
+        change = finishing_energy - starting_energy
         change = change.to_f / 1000000 if zone[:unit] = 'uj'
         process_change = change*node_proportion
         process_change = process_change.round(7)
