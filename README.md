@@ -6,6 +6,7 @@ User-level utility for monitoring energy consumption on HPC clusters via Slurm.
 Utilises the Linux-standard [powercap framework](https://www.kernel.org/doc/Documentation/power/powercap/powercap.txt) to interface with kernel devices
 to retrieve energy information without requiring superuser privileges. Currently
 has only been tested on RHEL-derivative RAPL systems.
+NOTE: Non-functional with jobs stopping and restarting with checkpointing.
 
 ## Installation
 
@@ -18,8 +19,8 @@ Requires Ruby version >= 2.0.0.
 PARALLEL_CMD [OPTIONS] record-job-energy.rb [OPTIONS] TASK [OPTIONS]
 
 Where PARALLEL_CMD is srun or mpirun/mpiexec where the MPI command is ran
-within an sbatch or salloc Slurm allocation. Only Intel MPI and OpenMPI MPI
-implementations have been tested.
+within an sbatch or salloc Slurm allocation. Only the OpenMPI implementation
+of MPI has been tested.
 
 ### Options
 

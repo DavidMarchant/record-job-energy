@@ -274,6 +274,7 @@ begin
   if proc_id = get_env_var('PMI_RANK', error = false)
     $running_mode = :intel_mpi
     num_procs = get_env_var('PMI_SIZE').to_i
+    cancel_job("Execution with Intel MPI is not currently supported - please use OpenMPI")
   elsif proc_id = get_env_var('OMPI_COMM_WORLD_RANK', error = false)
     $running_mode = :open_mpi
     num_procs = get_env_var('OMPI_COMM_WORLD_SIZE').to_i
