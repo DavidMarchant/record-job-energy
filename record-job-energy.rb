@@ -31,6 +31,7 @@ RECORD-JOB-ENERGY HELP
 help_str
 ENERGY_FILE_NAME = 'energy_uj'
 MAX_ENERGY_FILE_NAME = 'max_energy_range_uj'
+UNIT = 'uj'
 TOTAL_FILE_NAME = "totalled_data"
 
 # Cancel the Slurm job
@@ -202,7 +203,10 @@ end
 def get_zone_energies(zones, tag)
   zones.each do |zone|
     energy = read_energy(zone[:path])
-    zone[tag.to_sym] = {time: Time.now, energy: energy, unit: 'uj'}
+    unless ENERGY_FILE_NAME.end_with?(UNIT)
+      cancel_job("unsupported energy unit in #{ENERGY_FILE_NAME}")
+    end
+    zone[tag.to_sym] = {time: Time.now, energy: energy, unit: UNIT}
   end
   zones
 end
