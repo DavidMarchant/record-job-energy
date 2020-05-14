@@ -403,6 +403,11 @@ begin
       end
     end
     per_node_data[:step_info] = step_info
+    per_node_data.each do |k, v|
+      next unless v.respond_to?(:key?) and v.key?(:node_total)
+      elapsed_seconds = v[:finish_time] - v[:start_time]
+      v[:elapsed_time] =  Time.at(elapsed_seconds).utc.strftime("%H:%M:%S:%5N")
+    end
     yaml_per_node_data = per_node_data.to_yaml
     totals_out_file_path = File.join(out_directory, TOTAL_FILE_NAME)
     File.open(totals_out_file_path, 'w') { |f| f.write(yaml_per_node_data) }
