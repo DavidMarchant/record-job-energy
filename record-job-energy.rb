@@ -26,6 +26,11 @@ RECORD-JOB-ENERGY HELP
       Sets the maximum time the root process will wait for the other processes to complete
       execution, after the root process has finished its execution. Value is in seconds,
       default value is #{DEFAULTS[:timeout]}.
+    --entirenodes
+      Process energy readings so that the entire energy consumption over the period is
+      reported. The default behaviour is to divide by the portion of the node's cores that
+      are used by the task. This option is suited for `--exclusive` Slurm use and when
+      an average is not desired.
     --help
       Display this message and exit
 help_str
@@ -374,15 +379,20 @@ begin
       sleep 1
     end
 
+    calculate_proportion = !(find_option(/entirenodes/))
     # Total the processes data into a single file and output it.
-    per_node_data = {total: 0, units: 'Joules'}
+    per_node_data = {total: 0,
+                     units: 'Joules',
+                     entirenodes: !calculate_proportion}
     Dir.glob(File.join(out_directory, '*')).each do |file|
       #only process files with a proc id as a name
       next unless File.basename(file).to_i.to_s == File.basename(file)
       proc_data = YAML.safe_load(File.read(file),
                                  permitted_classes: [Time, Symbol])
       node_ = proc_data[:node]
-      node_proportion = (1.0/proc_data[:num_cores])*proc_data[:cpus_per_task]
+      if calculate_proportion
+        node_proportion = (1.0/proc_data[:num_cores])*proc_data[:cpus_per_task]
+      end
 
       #NOTE Time.at((2**31)-1) gives the maximum possible time value
       #     so all others will be lesser
@@ -402,12 +412,14 @@ begin
         finishing_energy = zone[:finishing_energy][:energy]
         change = finishing_energy - starting_energy
         change = change.to_f / 1000000 if zone[:unit] = 'uj'
-        process_change = change*node_proportion
-        process_change = process_change.round(7)
+        if calculate_proportion
+          change = change*node_proportion
+        end
+        change = change.round(7)
         per_node_data[node_][:zones][zone_name_] ||= 0
-        per_node_data[node_][:zones][zone_name_] += process_change
+        per_node_data[node_][:zones][zone_name_] += change
         per_node_data[node_][:node_total] ||= 0
-        per_node_data[node_][:node_total] += process_change
+        per_node_data[node_][:node_total] += change
 
         if per_node_data[node_][:start_time] > zone[:starting_energy][:time]
           per_node_data[node_][:start_time] = zone[:starting_energy][:time]
@@ -415,7 +427,7 @@ begin
         if per_node_data[node_][:finish_time] < zone[:finishing_energy][:time]
           per_node_data[node_][:finish_time] = zone[:finishing_energy][:time]
         end
-        per_node_data[:total] += process_change
+        per_node_data[:total] += change
       end
     end
     per_node_data[:step_info] = step_info
@@ -423,6 +435,11 @@ begin
       next unless v.respond_to?(:key?) and v.key?(:node_total)
       elapsed_seconds = v[:finish_time] - v[:start_time]
       v[:elapsed_time] =  Time.at(elapsed_seconds).utc.strftime("%H:%M:%S:%5N")
+
+      unless calculate_proportion
+        v[:node_total] /= v[:num_procs]
+        v[:zones].each { |k2, v2| v2 /= v[:num_procs] }
+      end
     end
     yaml_per_node_data = per_node_data.to_yaml
     totals_out_file_path = File.join(out_directory, TOTAL_FILE_NAME)

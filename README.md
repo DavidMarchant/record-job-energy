@@ -31,6 +31,11 @@ of MPI has been tested.
 -d/--directory=PATH
   The directory to use as the top level of the data store.
   Default is script_directory/record-job-energy-data
+--entirenodes
+  Process energy readings so that each node's entire energy consumption over the period
+  is reported. The default behaviour is to divide by the portion of the node's cores that
+  are used by the task. This option is suited for `--exclusive` Slurm use and when
+  an average is not desired.
 --help
   Displays a help string and exits.
 
