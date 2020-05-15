@@ -3,9 +3,11 @@
 ## Overview
 
 User-level utility for monitoring energy consumption on HPC clusters via Slurm.
+
 Utilises the Linux-standard [powercap framework](https://www.kernel.org/doc/Documentation/power/powercap/powercap.txt) to interface with kernel devices
 to retrieve energy information without requiring superuser privileges. Currently
 has only been tested on RHEL-derivative RAPL systems.
+
 NOTE: Non-functional with jobs stopping and restarting with checkpointing.
 
 ## Installation
@@ -28,14 +30,17 @@ of MPI has been tested.
   The amount of time, in seconds, the root process will wait for the other
   processes to return before assuming that it has silently failed.
   Default is 600
+
 -d/--directory=PATH
   The directory to use as the top level of the data store.
   Default is script_directory/record-job-energy-data
+
 --entirenodes
   Process energy readings so that each node's entire energy consumption over the period
   is reported. The default behaviour is to divide by the portion of the node's cores that
   are used by the task. This option is suited for `--exclusive` Slurm use and when
   an average is not desired.
+
 --help
   Displays a help string and exits.
 
