@@ -33,6 +33,7 @@ ENERGY_FILE_NAME = 'energy_uj'
 MAX_ENERGY_FILE_NAME = 'max_energy_range_uj'
 UNIT = 'uj'
 TOTAL_FILE_NAME = "totalled_data"
+STEP_INFO_FILE_NAME = "step_info"
 
 # Cancel the Slurm job
 # Can be passed a job_id and/or a step_id, will try retrieve them if not
@@ -185,7 +186,7 @@ def get_step_id(job_directory, error = true)
         completed_steps = Dir.entries(job_directory).select do |f|
           f.to_i.to_s == f and File.exist?(File.join(job_directory,
                                                      f,
-                                                     TOTAL_FILE_NAME))
+                                                     STEP_INFO_FILE_NAME))
         end
         step_id = completed_steps.length
       else
@@ -320,7 +321,7 @@ begin
   #Create a file for debugging with info on the current step
   if proc_id == 0
     create_directory(out_directory, proc_id)
-    step_info_path = File.join(out_directory, "step_info")
+    step_info_path = File.join(out_directory, STEP_INFO_FILE_NAME)
     step_info = { job_id: job_id,
                  step_id: step_id,
                  task: $task_arr.join(' '),
