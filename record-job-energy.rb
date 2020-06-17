@@ -387,8 +387,7 @@ begin
     Dir.glob(File.join(out_directory, '*')).each do |file|
       #only process files with a proc id as a name
       next unless File.basename(file).to_i.to_s == File.basename(file)
-      proc_data = YAML.safe_load(File.read(file),
-                                 permitted_classes: [Time, Symbol])
+      proc_data = YAML.safe_load(File.read(file), [Time, Symbol])
       node_ = proc_data[:node]
       if calculate_proportion
         node_proportion = (1.0/proc_data[:num_cores])*proc_data[:cpus_per_task]
